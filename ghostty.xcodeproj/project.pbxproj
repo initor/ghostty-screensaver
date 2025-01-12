@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
+		9C6695532D3477390069F1CB /* ghosttyTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ghosttyTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9CB1AD362D33AAA4002AB6E4 /* ghostty.saver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ghostty.saver; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -19,6 +20,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		9C6695502D3477390069F1CB /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9CB1AD332D33AAA4002AB6E4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -41,6 +49,7 @@
 			isa = PBXGroup;
 			children = (
 				9CB1AD362D33AAA4002AB6E4 /* ghostty.saver */,
+				9C6695532D3477390069F1CB /* ghosttyTest.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -58,6 +67,25 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
+		9C6695522D3477390069F1CB /* ghosttyTest */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9C6695592D3477390069F1CB /* Build configuration list for PBXNativeTarget "ghosttyTest" */;
+			buildPhases = (
+				9C66954F2D3477390069F1CB /* Sources */,
+				9C6695502D3477390069F1CB /* Frameworks */,
+				9C6695512D3477390069F1CB /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ghosttyTest;
+			packageProductDependencies = (
+			);
+			productName = ghosttyTest;
+			productReference = 9C6695532D3477390069F1CB /* ghosttyTest.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		9CB1AD352D33AAA4002AB6E4 /* ghostty */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 9CB1AD3F2D33AAA4002AB6E4 /* Build configuration list for PBXNativeTarget "ghostty" */;
@@ -90,6 +118,9 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					9C6695522D3477390069F1CB = {
+						CreatedOnToolsVersion = 16.2;
+					};
 					9CB1AD352D33AAA4002AB6E4 = {
 						CreatedOnToolsVersion = 16.2;
 					};
@@ -110,11 +141,19 @@
 			projectRoot = "";
 			targets = (
 				9CB1AD352D33AAA4002AB6E4 /* ghostty */,
+				9C6695522D3477390069F1CB /* ghosttyTest */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		9C6695512D3477390069F1CB /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9CB1AD342D33AAA4002AB6E4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -125,6 +164,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		9C66954F2D3477390069F1CB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9CB1AD322D33AAA4002AB6E4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -135,6 +181,34 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		9C6695572D3477390069F1CB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = weezy.ghosttyTest;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Debug;
+		};
+		9C6695582D3477390069F1CB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = weezy.ghosttyTest;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+			};
+			name = Release;
+		};
 		9CB1AD3D2D33AAA4002AB6E4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -289,6 +363,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		9C6695592D3477390069F1CB /* Build configuration list for PBXNativeTarget "ghosttyTest" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C6695572D3477390069F1CB /* Debug */,
+				9C6695582D3477390069F1CB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		9CB1AD302D33AAA4002AB6E4 /* Build configuration list for PBXProject "ghostty" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
