@@ -31,3 +31,7 @@ A macOS screensaver that animates ASCII frames originally inspired by ghostty.or
 ## Concurrency
 
 The loading/parsing uses a **dispatch group** and a **concurrent queue**, which can improve loading time when there are many ASCII frames. Each file is processed in parallel, then results are gathered in the correct order.
+
+## Credits
+
+Original ASCII frames from ghostty.org repository [website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames).
