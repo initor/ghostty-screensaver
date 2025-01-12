@@ -1,6 +1,6 @@
 # Ghostty Screensaver
 
-A macOS screensaver that animates ASCII frames originally inspired by ghostty.org.
+A macOS screensaver that animates ASCII frames originally inspired by [ghostty.org](https://ghostty.org/).
 
 
 ## Features
@@ -34,4 +34,4 @@ The loading/parsing uses a **dispatch group** and a **concurrent queue**, which 
 
 ## Credits
 
-Original ASCII frames from ghostty.org repository [website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames).
+Original ASCII frames from [ghostty.org](https://ghostty.org/) repository [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames).
