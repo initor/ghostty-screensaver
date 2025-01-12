@@ -8,6 +8,11 @@
 #import "GhosttyFrameLoader.h"
 #import <AppKit/AppKit.h> // Needed for NSColor, NSFont, etc.
 
+// file-level statics (visible only in this .m file)
+static NSColor *sBlueColor;
+static NSColor *sWhiteColor;
+static NSFont  *sMonospacedFont;
+
 @interface GhosttyFrameLoader ()
 
 /**
@@ -23,18 +28,37 @@
 
 @implementation GhosttyFrameLoader
 
+#pragma mark - One-Time Initialization
+
++ (void)initialize
+{
+    // +initialize is called automatically by the runtime the first time
+    // this class or any subclass is referenced.
+    // Make sure it only initializes once, and only for this class.
+    if (self == [GhosttyFrameLoader class]) {
+        sBlueColor = [NSColor colorWithSRGBRed:0.0
+                                        green:0.0
+                                         blue:(230.0 / 255.0)
+                                        alpha:1.0];
+
+        sWhiteColor = [NSColor colorWithSRGBRed:(215.0 / 255.0)
+                                         green:(215.0 / 255.0)
+                                          blue:(215.0 / 255.0)
+                                         alpha:1.0];
+
+        sMonospacedFont = [NSFont fontWithName:@"Menlo" size:16.0];
+    }
+}
+
 #pragma mark - Public API
 
 - (NSArray<NSAttributedString *> *)loadFramesFromBundle:(NSBundle *)bundle
 {
     NSLog(@"[GhosttyFrameLoader] Scanning .txt resources in %@", bundle.bundlePath);
 
-    // 1) Find all .txt files in the bundle
     NSArray<NSString *> *paths = [bundle pathsForResourcesOfType:@"txt" inDirectory:nil];
-    // 2) Sort them so they load in a predictable order (optional)
     paths = [paths sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
 
-    // 3) Attempt to parse them into attributed strings
     NSMutableArray<NSAttributedString *> *loadedFrames = [NSMutableArray array];
     for (NSString *path in paths) {
         NSError *error = nil;
@@ -43,10 +67,10 @@
                                                             error:&error];
         if (!rawContent || error) {
             NSLog(@"[GhosttyFrameLoader] Could not read %@ (error=%@)", path, error);
-            continue; // Skip files that fail to load
+            continue; // fail-open
         }
 
-        // 4) Convert raw text to attributed text
+        // decorate loaded .txt file into NSAttributedString obj
         NSAttributedString *frameAS = [self attributedFrameFromRawHTML:rawContent];
         [loadedFrames addObject:frameAS];
 
@@ -61,30 +85,16 @@
 
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
 {
-    // Define your colors
-    NSColor *blueColor  = [NSColor colorWithSRGBRed:0.0
-                                             green:0.0
-                                              blue:(230.0 / 255.0)
-                                             alpha:1.0];
-    NSColor *whiteColor = [NSColor colorWithSRGBRed:(215.0 / 255.0)
-                                             green:(215.0 / 255.0)
-                                              blue:(215.0 / 255.0)
-                                             alpha:1.0];
-
-    // Monospaced font for ASCII art
-    NSFont *monospacedFont = [NSFont fontWithName:@"Menlo" size:16.0];
-
-    // Attributes for white vs. blue text
     NSDictionary *attrsWhite = @{
-        NSFontAttributeName: monospacedFont,
-        NSForegroundColorAttributeName: whiteColor
+        NSFontAttributeName: sMonospacedFont,
+        NSForegroundColorAttributeName: sWhiteColor
     };
     NSDictionary *attrsBlue = @{
-        NSFontAttributeName: monospacedFont,
-        NSForegroundColorAttributeName: blueColor
+        NSFontAttributeName: sMonospacedFont,
+        NSForegroundColorAttributeName: sBlueColor
     };
 
-    // Regex that finds `<span class="b">…</span>` blocks
+    // regex that finds `<span class="b">…</span>` blocks
     NSString *pattern = @"<span class=\"b\">(.*?)</span>";
     NSRegularExpressionOptions options = NSRegularExpressionDotMatchesLineSeparators;
     NSError *regexError = nil;
@@ -94,23 +104,20 @@
                                                     error:&regexError];
     if (!regex) {
         NSLog(@"[GhosttyFrameLoader] Regex creation error: %@", regexError);
-        // Fallback: entire text in white
+        // fail-open
         return [[NSAttributedString alloc] initWithString:raw attributes:attrsWhite];
     }
 
-    // Build the parsed output
     NSMutableAttributedString *parsed = [[NSMutableAttributedString alloc] init];
     NSUInteger lastLoc = 0;
     NSArray<NSTextCheckingResult *> *matches =
         [regex matchesInString:raw options:0 range:NSMakeRange(0, raw.length)];
 
     for (NSTextCheckingResult *match in matches) {
-        // The entire `<span...>...</span>` block
         NSRange fullMatchRange = [match rangeAtIndex:0];
-        // The text inside the span
         NSRange innerRange     = [match rangeAtIndex:1];
 
-        // Append outside text as white
+        // appen outside text as white
         if (fullMatchRange.location > lastLoc) {
             NSRange outsideRange = NSMakeRange(lastLoc, fullMatchRange.location - lastLoc);
             NSString *outsideText = [raw substringWithRange:outsideRange];
@@ -119,17 +126,15 @@
             [parsed appendAttributedString:outsideAS];
         }
 
-        // Append the span text as blue
+        // append the span text as blue
         NSString *blueText = [raw substringWithRange:innerRange];
         NSAttributedString *blueAS =
             [[NSAttributedString alloc] initWithString:blueText attributes:attrsBlue];
         [parsed appendAttributedString:blueAS];
 
-        // Move the pointer
         lastLoc = fullMatchRange.location + fullMatchRange.length;
     }
 
-    // Append any trailing text (also white)
     if (lastLoc < raw.length) {
         NSRange trailingRange = NSMakeRange(lastLoc, raw.length - lastLoc);
         NSString *trailingText = [raw substringWithRange:trailingRange];
