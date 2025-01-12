@@ -1,0 +1,5 @@
+# Ignore user-specific workspace settings
+project.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcscmblueprint
+
