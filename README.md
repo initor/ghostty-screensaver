@@ -67,14 +67,6 @@ macOS should then pick up the newly installed `.saver` file.
 - Animates frames at 30 FPS.
 - Basic fallback if no frames are found.
 
-### Project Structure
-
-`ghosttyView.h/.m` – The main ScreenSaverView subclass that:
-- Loads `.txt ` frames (concurrently if desired).
-- Parses `<span class="b">` for color coding.
-- Draws each frame in `drawRect:`.
-- Animates them via `animateOneFrame`.
-
 ## Credits
 
 Original ASCII frames from [ghostty.org](https://ghostty.org/) via the [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames) repository.
