@@ -20,7 +20,13 @@
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [loader loadFramesFromBundle:thisBundle];
         
-//        [self loadAllFrames];
+        // precompute sizes
+        NSMutableArray<NSValue *> *sizes = [NSMutableArray arrayWithCapacity:self.frames.count];
+        for (NSAttributedString *as in self.frames) {
+            [sizes addObject:[NSValue valueWithSize:[as size]]];
+        }
+        self.frameSizes = [sizes copy];
+        
         [self setAnimationTimeInterval:(1.0 / 30.0)];
         self.currentFrameIndex = 0;
     }
@@ -54,7 +60,7 @@
     NSAttributedString *currentFrame = self.frames[self.currentFrameIndex];
 
     // measure and center
-    NSSize textSize = [currentFrame size];
+    NSSize textSize = [self.frameSizes[self.currentFrameIndex] sizeValue];
     CGFloat x = NSMidX(self.bounds) - (textSize.width  / 2.0);
     CGFloat y = NSMidY(self.bounds) - (textSize.height / 2.0);
 
