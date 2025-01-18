@@ -9,6 +9,7 @@
 
 @interface ghosttyView : ScreenSaverView
 
+@property (nonatomic, strong) NSArray<NSValue *> *frameSizes;
 @property (nonatomic, strong) NSArray<NSAttributedString *> *frames;
 @property (nonatomic, assign) NSInteger currentFrameIndex;
 
