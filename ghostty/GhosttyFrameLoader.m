@@ -81,6 +81,33 @@ static NSFont  *sMonospacedFont;
     return [loadedFrames copy];
 }
 
+#pragma mark - Build NSImage Array
+
+- (NSArray<NSImage *> *)buildFrameImagesFromAttributedStrings:(NSArray<NSAttributedString *> *)frames
+{
+    NSMutableArray<NSImage *> *images = [NSMutableArray arrayWithCapacity:frames.count];
+
+    for (NSAttributedString *as in frames) {
+        NSSize textSize = [as size];
+        if (NSEqualSizes(textSize, NSZeroSize)) {
+            textSize = NSMakeSize(1, 1);
+        }
+
+        NSImage *renderedImage = [[NSImage alloc] initWithSize:textSize];
+        [renderedImage lockFocus];
+
+        [[NSColor clearColor] set];
+        NSRectFill(NSMakeRect(0, 0, textSize.width, textSize.height));
+
+        [as drawAtPoint:NSZeroPoint];
+        [renderedImage unlockFocus];
+
+        [images addObject:renderedImage];
+    }
+
+    return [images copy];
+}
+
 #pragma mark - Private Helpers
 
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
