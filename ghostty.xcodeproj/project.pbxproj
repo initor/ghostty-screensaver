@@ -7,20 +7,38 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		9C6695532D3477390069F1CB /* ghosttyTest.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ghosttyTest.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9C214C732D3C804A00A6BCE4 /* GhosttyPerformanceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = GhosttyPerformanceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		9CB1AD362D33AAA4002AB6E4 /* ghostty.saver */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ghostty.saver; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		9C214C7D2D3CA13000A6BCE4 /* Exceptions for "ghostty" folder in "GhosttyPerformanceTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				GhosttyFrameLoader.m,
+			);
+			target = 9C214C722D3C804A00A6BCE4 /* GhosttyPerformanceTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		9C214C742D3C804A00A6BCE4 /* GhosttyPerformanceTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = GhosttyPerformanceTests;
+			sourceTree = "<group>";
+		};
 		9CB1AD382D33AAA4002AB6E4 /* ghostty */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				9C214C7D2D3CA13000A6BCE4 /* Exceptions for "ghostty" folder in "GhosttyPerformanceTests" target */,
+			);
 			path = ghostty;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		9C6695502D3477390069F1CB /* Frameworks */ = {
+		9C214C702D3C804A00A6BCE4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -41,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				9CB1AD382D33AAA4002AB6E4 /* ghostty */,
+				9C214C742D3C804A00A6BCE4 /* GhosttyPerformanceTests */,
 				9CB1AD372D33AAA4002AB6E4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -49,7 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				9CB1AD362D33AAA4002AB6E4 /* ghostty.saver */,
-				9C6695532D3477390069F1CB /* ghosttyTest.xctest */,
+				9C214C732D3C804A00A6BCE4 /* GhosttyPerformanceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -67,23 +86,26 @@
 /* End PBXHeadersBuildPhase section */
 
 /* Begin PBXNativeTarget section */
-		9C6695522D3477390069F1CB /* ghosttyTest */ = {
+		9C214C722D3C804A00A6BCE4 /* GhosttyPerformanceTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9C6695592D3477390069F1CB /* Build configuration list for PBXNativeTarget "ghosttyTest" */;
+			buildConfigurationList = 9C214C792D3C804A00A6BCE4 /* Build configuration list for PBXNativeTarget "GhosttyPerformanceTests" */;
 			buildPhases = (
-				9C66954F2D3477390069F1CB /* Sources */,
-				9C6695502D3477390069F1CB /* Frameworks */,
-				9C6695512D3477390069F1CB /* Resources */,
+				9C214C6F2D3C804A00A6BCE4 /* Sources */,
+				9C214C702D3C804A00A6BCE4 /* Frameworks */,
+				9C214C712D3C804A00A6BCE4 /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
-			name = ghosttyTest;
+			fileSystemSynchronizedGroups = (
+				9C214C742D3C804A00A6BCE4 /* GhosttyPerformanceTests */,
+			);
+			name = GhosttyPerformanceTests;
 			packageProductDependencies = (
 			);
-			productName = ghosttyTest;
-			productReference = 9C6695532D3477390069F1CB /* ghosttyTest.xctest */;
+			productName = GhosttyPerformanceTests;
+			productReference = 9C214C732D3C804A00A6BCE4 /* GhosttyPerformanceTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		9CB1AD352D33AAA4002AB6E4 /* ghostty */ = {
@@ -118,7 +140,7 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
-					9C6695522D3477390069F1CB = {
+					9C214C722D3C804A00A6BCE4 = {
 						CreatedOnToolsVersion = 16.2;
 					};
 					9CB1AD352D33AAA4002AB6E4 = {
@@ -141,13 +163,13 @@
 			projectRoot = "";
 			targets = (
 				9CB1AD352D33AAA4002AB6E4 /* ghostty */,
-				9C6695522D3477390069F1CB /* ghosttyTest */,
+				9C214C722D3C804A00A6BCE4 /* GhosttyPerformanceTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		9C6695512D3477390069F1CB /* Resources */ = {
+		9C214C712D3C804A00A6BCE4 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -164,7 +186,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		9C66954F2D3477390069F1CB /* Sources */ = {
+		9C214C6F2D3C804A00A6BCE4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -181,29 +203,27 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
-		9C6695572D3477390069F1CB /* Debug */ = {
+		9C214C772D3C804A00A6BCE4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = weezy.ghosttyTest;
+				PRODUCT_BUNDLE_IDENTIFIER = weezy.GhosttyPerformanceTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 			};
 			name = Debug;
 		};
-		9C6695582D3477390069F1CB /* Release */ = {
+		9C214C782D3C804A00A6BCE4 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = weezy.ghosttyTest;
+				PRODUCT_BUNDLE_IDENTIFIER = weezy.GhosttyPerformanceTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 			};
@@ -363,14 +383,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		9C6695592D3477390069F1CB /* Build configuration list for PBXNativeTarget "ghosttyTest" */ = {
+		9C214C792D3C804A00A6BCE4 /* Build configuration list for PBXNativeTarget "GhosttyPerformanceTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				9C6695572D3477390069F1CB /* Debug */,
-				9C6695582D3477390069F1CB /* Release */,
+				9C214C772D3C804A00A6BCE4 /* Debug */,
+				9C214C782D3C804A00A6BCE4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		9CB1AD302D33AAA4002AB6E4 /* Build configuration list for PBXProject "ghostty" */ = {
 			isa = XCConfigurationList;
@@ -379,7 +399,7 @@
 				9CB1AD3E2D33AAA4002AB6E4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		9CB1AD3F2D33AAA4002AB6E4 /* Build configuration list for PBXNativeTarget "ghostty" */ = {
 			isa = XCConfigurationList;
@@ -388,7 +408,7 @@
 				9CB1AD412D33AAA4002AB6E4 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};

@@ -25,6 +25,17 @@ NS_ASSUME_NONNULL_BEGIN
  */
 - (NSArray<NSAttributedString *> *)loadFramesFromBundle:(NSBundle *)bundle;
 
+/**
+ Converts an array of NSAttributedString frames into NSImage objects by
+ rendering each string offscreen. Useful for performance-critical code
+ (e.g. screensaver animation), as drawing a pre-rendered image is faster
+ than drawing text each frame.
+
+ @param frames An array of NSAttributedString objects
+ @return An array of NSImage objects, each containing the rendered text
+ */
+- (NSArray<NSImage *> *)buildFrameImagesFromAttributedStrings:(NSArray<NSAttributedString *> *)frames;
+
 @end
 
 NS_ASSUME_NONNULL_END

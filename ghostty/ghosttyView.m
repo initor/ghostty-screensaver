@@ -20,13 +20,10 @@
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [loader loadFramesFromBundle:thisBundle];
         
-        // precompute sizes
-        NSMutableArray<NSValue *> *sizes = [NSMutableArray arrayWithCapacity:self.frames.count];
-        for (NSAttributedString *as in self.frames) {
-            [sizes addObject:[NSValue valueWithSize:[as size]]];
-        }
-        self.frameSizes = [sizes copy];
+        // pre-compute frame into images
+        self.frameImages = [loader buildFrameImagesFromAttributedStrings:self.frames];
         
+        // initial values
         [self setAnimationTimeInterval:(1.0 / 30.0)];
         self.currentFrameIndex = 0;
     }
@@ -52,20 +49,18 @@
     [[NSColor blackColor] setFill];
     NSRectFill(rect);
 
-    if (self.frames.count == 0) {
-        NSLog(@"[ghostty] no frames to draw");
+    if (self.frameImages.count == 0) {
+        NSLog(@"[ghostty] no frame images to draw");
         return;
     }
 
-    NSAttributedString *currentFrame = self.frames[self.currentFrameIndex];
-
-    // measure and center
-    NSSize textSize = [self.frameSizes[self.currentFrameIndex] sizeValue];
-    CGFloat x = NSMidX(self.bounds) - (textSize.width  / 2.0);
-    CGFloat y = NSMidY(self.bounds) - (textSize.height / 2.0);
-
+    NSImage *currentImage = self.frameImages[self.currentFrameIndex];
+    NSSize imageSize = currentImage.size;
+    CGFloat x = NSMidX(self.bounds) - (imageSize.width  / 2.0);
+    CGFloat y = NSMidY(self.bounds) - (imageSize.height / 2.0);
+    
     // draw
-    [currentFrame drawAtPoint:NSMakePoint(x, y)];
+    [currentImage drawAtPoint:NSMakePoint(x, y) fromRect:NSZeroRect operation:NSCompositingOperationSourceOver fraction:1.0];
 }
 
 - (void)animateOneFrame
