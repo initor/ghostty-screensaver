@@ -20,7 +20,6 @@
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [loader loadFramesFromBundle:thisBundle];
         
-//        [self loadAllFrames];
         [self setAnimationTimeInterval:(1.0 / 30.0)];
         self.currentFrameIndex = 0;
     }
@@ -43,23 +42,25 @@
 
 - (void)drawRect:(NSRect)rect
 {
-    [[NSColor blackColor] setFill];
-    NSRectFill(rect);
+    @autoreleasepool {
+        [[NSColor blackColor] setFill];
+        NSRectFill(rect);
 
-    if (self.frames.count == 0) {
-        NSLog(@"[ghostty] no frames to draw");
-        return;
+        if (self.frames.count == 0) {
+            NSLog(@"[ghostty] no frames to draw");
+            return;
+        }
+
+        NSAttributedString *currentFrame = self.frames[self.currentFrameIndex];
+
+        // measure and center
+        NSSize textSize = [currentFrame size];
+        CGFloat x = NSMidX(self.bounds) - (textSize.width  / 2.0);
+        CGFloat y = NSMidY(self.bounds) - (textSize.height / 2.0);
+
+        // draw
+        [currentFrame drawAtPoint:NSMakePoint(x, y)];
     }
-
-    NSAttributedString *currentFrame = self.frames[self.currentFrameIndex];
-
-    // measure and center
-    NSSize textSize = [currentFrame size];
-    CGFloat x = NSMidX(self.bounds) - (textSize.width  / 2.0);
-    CGFloat y = NSMidY(self.bounds) - (textSize.height / 2.0);
-
-    // draw
-    [currentFrame drawAtPoint:NSMakePoint(x, y)];
 }
 
 - (void)animateOneFrame
