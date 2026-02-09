@@ -57,14 +57,6 @@
     self.lastRenderedFrameIndex = -1;
 }
 
-// NSLayoutManager draws glyphs in a flipped coordinate system (origin at
-// top-left, y increasing downward). ScreenSaverView inherits from NSView
-// which is unflipped by default, causing the animation to render upside down.
-- (BOOL)isFlipped
-{
-    return YES;
-}
-
 #pragma mark - Drawing & Animation
 
 - (void)drawRect:(NSRect)rect
@@ -93,7 +85,19 @@
         CGFloat x = NSMidX(self.bounds) - (usedRect.size.width  / 2.0);
         CGFloat y = NSMidY(self.bounds) - (usedRect.size.height / 2.0);
 
+        // NSLayoutManager draws glyphs assuming a flipped (top-left origin)
+        // coordinate system. ScreenSaverView is unflipped by default and
+        // overriding -isFlipped is not reliably honored by the screensaver
+        // compositing layer. Apply a local CGContext flip instead so only
+        // the text drawing is affected.
+        CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+        CGContextSaveGState(ctx);
+        CGContextTranslateCTM(ctx, 0, NSHeight(self.bounds));
+        CGContextScaleCTM(ctx, 1.0, -1.0);
+
         [self.layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:NSMakePoint(x, y)];
+
+        CGContextRestoreGState(ctx);
     }
 }
 
