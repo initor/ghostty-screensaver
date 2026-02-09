@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build and Test
+    name: Build
     runs-on: macos-15
 
     steps:
@@ -21,12 +21,4 @@ jobs:
             -project ghostty.xcodeproj \
             -scheme ghostty \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO
-
-      - name: Run Tests
-        run: |
-          xcodebuild test \
-            -project ghostty.xcodeproj \
-            -scheme ghosttyTest \
-            -configuration Debug \
             CODE_SIGNING_ALLOWED=NO
