@@ -25,30 +25,31 @@ A macOS screensaver that animates ASCII frames, originally inspired by [ghostty.
 
 ### Installation Issues & Troubleshooting
 
-> “App cannot be opened because the developer cannot be verified”
+> "ghostty.saver is damaged and can't be opened"
 
-Because Ghostty Screensaver is not distributed via the Mac App Store, macOS may block the `.saver` file when you try to install. To work around this:
+This happens when macOS quarantine blocks an unsigned download. Remove the quarantine attribute:
+
+```bash
+xattr -r -d com.apple.quarantine ghostty.saver
+```
+
+Then double-click the `.saver` file again to install.
+
+> "App cannot be opened because the developer cannot be verified"
+
+macOS Gatekeeper may block the `.saver` file. To work around this:
 
 1. System Settings (macOS Ventura or later):
 
 - Open `System Settings → Privacy & Security`.
-- Scroll down to the “Security” section. You should see a warning about “Ghostty.saver” being blocked.
-- Click `“Open Anyway”` to allow installation.
+- Scroll down to the "Security" section. You should see a warning about "Ghostty.saver" being blocked.
+- Click `"Open Anyway"` to allow installation.
 
 2. Security & Privacy (macOS Monterey or earlier):
 
 - Go to System Preferences → Security & Privacy → General.
-- You might see a message that says “Ghostty.saver was blocked from opening because it is not from an identified developer.”
-- Click “Open Anyway” and confirm.
-
-3. Using [Ghostty](https://ghostty.org/) 👻: If you still can’t install or macOS complains about quarantine:
-
-- Navigate to the folder where you placed `ghostty.saver`.
-- Run the following command:
-```bash
-sudo xattr -d com.apple.quarantine ghostty.saver
-```
-- Double-click the `.saver` file again to install.
+- You might see a message that says "Ghostty.saver was blocked from opening because it is not from an identified developer."
+- Click "Open Anyway" and confirm.
 
 > [!NOTE]
 > Once installed, if the new version of the screensaver doesn’t **load** immediately, try:
