@@ -17,8 +17,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check signing availability
+        id: signing
+        env:
+          DEVELOPER_ID_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE }}
+        run: |
+          if [ -n "$DEVELOPER_ID_CERTIFICATE" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Import signing certificate
-        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        if: steps.signing.outputs.available == 'true'
         env:
           DEVELOPER_ID_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE }}
           DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
@@ -45,7 +56,7 @@ jobs:
           security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
 
       - name: Build ghostty.saver (signed)
-        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        if: steps.signing.outputs.available == 'true'
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
@@ -57,7 +68,7 @@ jobs:
             OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime"
 
       - name: Build ghostty.saver (unsigned)
-        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE == '' }}
+        if: steps.signing.outputs.available != 'true'
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
@@ -67,7 +78,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO
 
       - name: Notarize ghostty.saver
-        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        if: steps.signing.outputs.available == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
