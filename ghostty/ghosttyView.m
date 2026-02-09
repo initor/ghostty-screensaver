@@ -19,9 +19,22 @@
         GhosttyFrameLoader *loader = [[GhosttyFrameLoader alloc] init];
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [loader loadFramesFromBundle:thisBundle];
-        
+
+        // Single reusable text layout stack. NSAttributedString's drawAtPoint:
+        // creates and caches an internal layout manager PER string. Over hours
+        // of screensaver runtime with 235 strings cycling, those internal caches
+        // grow without bound. Using one explicit layout manager keeps cache size
+        // bounded to the current frame only.
+        self.textContainer = [[NSTextContainer alloc] initWithSize:NSMakeSize(1e7, 1e7)];
+        self.textContainer.lineFragmentPadding = 0;
+        self.layoutManager = [[NSLayoutManager alloc] init];
+        [self.layoutManager addTextContainer:self.textContainer];
+        self.textStorage = [[NSTextStorage alloc] init];
+        [self.textStorage addLayoutManager:self.layoutManager];
+
         [self setAnimationTimeInterval:(1.0 / 30.0)];
         self.currentFrameIndex = 0;
+        self.lastRenderedFrameIndex = -1;
     }
     return self;
 }
@@ -36,6 +49,12 @@
 - (void)stopAnimation
 {
     [super stopAnimation];
+    // Tear down layout stack so cached glyphs / layout data are freed
+    [self.textStorage removeLayoutManager:self.layoutManager];
+    self.textStorage = nil;
+    self.layoutManager = nil;
+    self.textContainer = nil;
+    self.lastRenderedFrameIndex = -1;
 }
 
 #pragma mark - Drawing & Animation
@@ -46,20 +65,27 @@
         [[NSColor blackColor] setFill];
         NSRectFill(rect);
 
-        if (self.frames.count == 0) {
-            NSLog(@"[ghostty] no frames to draw");
+        if (self.frames.count == 0 || !self.layoutManager) {
             return;
         }
 
-        NSAttributedString *currentFrame = self.frames[self.currentFrameIndex];
+        // Swap the text storage content only when the frame actually changes.
+        // setAttributedString: invalidates the old layout, so the layout
+        // manager never accumulates stale cache entries across frames.
+        if (self.lastRenderedFrameIndex != self.currentFrameIndex) {
+            [self.textStorage setAttributedString:self.frames[self.currentFrameIndex]];
+            self.lastRenderedFrameIndex = self.currentFrameIndex;
+        }
 
-        // measure and center
-        NSSize textSize = [currentFrame size];
-        CGFloat x = NSMidX(self.bounds) - (textSize.width  / 2.0);
-        CGFloat y = NSMidY(self.bounds) - (textSize.height / 2.0);
+        // Measure and center using the layout manager (not [attrStr size],
+        // which would trigger a separate internal layout cache).
+        NSRange glyphRange = [self.layoutManager glyphRangeForTextContainer:self.textContainer];
+        NSRect usedRect = [self.layoutManager usedRectForTextContainer:self.textContainer];
 
-        // draw
-        [currentFrame drawAtPoint:NSMakePoint(x, y)];
+        CGFloat x = NSMidX(self.bounds) - (usedRect.size.width  / 2.0);
+        CGFloat y = NSMidY(self.bounds) - (usedRect.size.height / 2.0);
+
+        [self.layoutManager drawGlyphsForGlyphRange:glyphRange atPoint:NSMakePoint(x, y)];
     }
 }
 

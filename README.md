@@ -8,12 +8,20 @@ A macOS screensaver that animates ASCII frames, originally inspired by [ghostty.
 
 ### Option A: Download from Releases
 
-1. Go to the [Releases](https://github.com/initor/ghostty-screensaver/releases) of this repository and download the latest `.zip` file.
-2. Unzip the file to extract the `.saver`.
-3. Remove the macOS quarantine attribute (required for unsigned builds):
+1. Download `ghostty.saver.zip` from the [latest release](https://github.com/initor/ghostty-screensaver/releases) (it saves to `~/Downloads` by default).
+2. Unzip the file to get `ghostty.saver`.
+3. Open Terminal and run:
+
+> [!IMPORTANT]
+> **You must run this command or macOS will say the file is "damaged and can't be opened."**
+> This is not a bug — macOS blocks all unsigned downloads with a misleading error.
+> The command below removes that block. It assumes the file is in `~/Downloads`;
+> change the path if you saved it elsewhere.
+
 ```bash
-xattr -r -d com.apple.quarantine ghostty.saver
+xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
 ```
+
 4. Double-click the `.saver` file and follow any prompts to install.
    - Alternatively, manually move it to `~/Library/Screen Savers/`.
 
@@ -34,10 +42,10 @@ xattr -r -d com.apple.quarantine ghostty.saver
 This happens when macOS quarantine blocks an unsigned download. Remove the quarantine attribute:
 
 ```bash
-xattr -r -d com.apple.quarantine ghostty.saver
+xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
 ```
 
-Then double-click the `.saver` file again to install.
+Adjust the path if you unzipped it somewhere other than `~/Downloads`. Then double-click the `.saver` file again to install.
 
 > "App cannot be opened because the developer cannot be verified"
 

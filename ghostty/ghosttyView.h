@@ -12,4 +12,10 @@
 @property (nonatomic, strong) NSArray<NSAttributedString *> *frames;
 @property (nonatomic, assign) NSInteger currentFrameIndex;
 
+// Reusable text layout stack — avoids per-string layout cache accumulation
+@property (nonatomic, strong) NSTextStorage *textStorage;
+@property (nonatomic, strong) NSLayoutManager *layoutManager;
+@property (nonatomic, strong) NSTextContainer *textContainer;
+@property (nonatomic, assign) NSInteger lastRenderedFrameIndex;
+
 @end
