@@ -10,14 +10,54 @@ permissions:
 
 jobs:
   release:
-    name: Build and Upload Release
+    name: Build and Release
     runs-on: macos-15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build ghostty.saver
+      - name: Import signing certificate
+        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        env:
+          DEVELOPER_ID_CERTIFICATE: ${{ secrets.DEVELOPER_ID_CERTIFICATE }}
+          DEVELOPER_ID_PASSWORD: ${{ secrets.DEVELOPER_ID_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          echo "$DEVELOPER_ID_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+          security import "$CERT_PATH" \
+            -P "$DEVELOPER_ID_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+
+      - name: Build ghostty.saver (signed)
+        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        run: |
+          xcodebuild clean build \
+            -project ghostty.xcodeproj \
+            -scheme ghostty \
+            -configuration Release \
+            -derivedDataPath ./build \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime"
+
+      - name: Build ghostty.saver (unsigned)
+        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE == '' }}
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
@@ -25,6 +65,25 @@ jobs:
             -configuration Release \
             -derivedDataPath ./build \
             CODE_SIGNING_ALLOWED=NO
+
+      - name: Notarize ghostty.saver
+        if: ${{ secrets.DEVELOPER_ID_CERTIFICATE != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          SAVER_PATH="./build/Build/Products/Release/ghostty.saver"
+
+          ditto -c -k --sequesterRsrc --keepParent "$SAVER_PATH" notarize-submit.zip
+
+          xcrun notarytool submit notarize-submit.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          xcrun stapler staple "$SAVER_PATH"
 
       - name: Package ghostty.saver.zip
         run: |
@@ -41,3 +100,8 @@ jobs:
           gh release upload "${{ github.ref_name }}" \
             ./build/Build/Products/Release/ghostty.saver.zip \
             --clobber
+
+      - name: Clean up keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
