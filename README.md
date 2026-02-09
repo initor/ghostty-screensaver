@@ -10,7 +10,11 @@ A macOS screensaver that animates ASCII frames, originally inspired by [ghostty.
 
 1. Go to the [Releases](https://github.com/initor/ghostty-screensaver/releases) of this repository and download the latest `.zip` file.
 2. Unzip the file to extract the `.saver`.
-3. Double-click the `.saver` file and follow any prompts to install.
+3. Remove the macOS quarantine attribute (required for unsigned builds):
+```bash
+xattr -r -d com.apple.quarantine ghostty.saver
+```
+4. Double-click the `.saver` file and follow any prompts to install.
    - Alternatively, manually move it to `~/Library/Screen Savers/`.
 
 ### Option B: Build from Source
