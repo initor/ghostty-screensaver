@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and Upload Release
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build ghostty.saver
+        run: |
+          xcodebuild clean build \
+            -project ghostty.xcodeproj \
+            -scheme ghostty \
+            -configuration Release \
+            -derivedDataPath ./build \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package ghostty.saver.zip
+        run: |
+          cd ./build/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent ghostty.saver ghostty.saver.zip
+
+      - name: Upload to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --generate-notes \
+            --title "${{ github.ref_name }}" 2>/dev/null || true
+          gh release upload "${{ github.ref_name }}" \
+            ./build/Build/Products/Release/ghostty.saver.zip \
+            --clobber
