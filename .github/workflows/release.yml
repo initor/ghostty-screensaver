@@ -77,6 +77,15 @@ jobs:
             -derivedDataPath ./build \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Ad-hoc sign bundle (unsigned builds)
+        if: steps.signing.outputs.available != 'true'
+        run: |
+          # Linker-signed binaries have no sealed resources, which causes
+          # legacyScreenSaver on macOS 15 to fail loading bundle resources
+          # (NSBundle.pathsForResourcesOfType: returns empty in the sandbox).
+          # Ad-hoc signing seals the .txt frame files so the sandbox allows access.
+          codesign -s - --force ./build/Build/Products/Release/ghostty.saver
+
       - name: Notarize ghostty.saver
         if: steps.signing.outputs.available == 'true'
         env:
@@ -104,8 +113,39 @@ jobs:
       - name: Upload to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          SIGNING_AVAILABLE: ${{ steps.signing.outputs.available }}
         run: |
+          if [ "$SIGNING_AVAILABLE" = "true" ]; then
+          cat > release-notes.md << 'NOTES'
+          ## Installation
+
+          1. Download `ghostty.saver.zip` below and unzip
+          2. Double-click `ghostty.saver` to install
+
+          ---
+          NOTES
+          else
+          cat > release-notes.md << 'NOTES'
+          ## Installation
+
+          1. Download `ghostty.saver.zip` below and unzip
+          2. **Remove the quarantine flag** (required — macOS will say the file is "damaged" without this):
+             ```
+             xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
+             ```
+             Adjust the path if you unzipped it somewhere other than `~/Downloads`.
+          3. Double-click `ghostty.saver` to install
+
+          > **Why?** This build is unsigned (no Apple Developer certificate). macOS blocks
+          > unsigned downloads with a misleading "damaged" error. The command above removes
+          > the quarantine flag so macOS allows installation.
+
+          ---
+          NOTES
+          fi
+
           gh release create "${{ github.ref_name }}" \
+            --notes-file release-notes.md \
             --generate-notes \
             --title "${{ github.ref_name }}" 2>/dev/null || true
           gh release upload "${{ github.ref_name }}" \
