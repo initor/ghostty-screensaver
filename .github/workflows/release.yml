@@ -1,53 +1,52 @@
 name: Release
 
+# B7 round-2 finding: dropping the workflow_run trigger eliminates the
+# auto-release spam (8 of 12 historic tags shipped in a 2 h burst, two
+# duplicate-SHA tag pairs). Releases now require an explicit tag push.
 on:
   push:
     tags:
       - "v*"
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.2.3) — only used by manual dispatch."
+        required: true
+        type: string
 
 permissions:
   contents: write
 
-# Prevent parallel releases from racing on tag creation
+# Coalesce in-flight releases on rapid tag pushes.
 concurrency:
   group: release
+  cancel-in-progress: true
 
 jobs:
   release:
     name: Build and Release
     runs-on: macos-15
-    # Run on tag push, or when CI succeeded on main
-    if: >-
-      github.event_name == 'push' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    timeout-minutes: 30
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-          fetch-depth: 0
-
       - name: Determine version
         id: version
         run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
           else
-            # Auto-increment patch version from latest vX.Y.Z tag
-            LATEST=$(git tag -l 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-            if [ -z "$LATEST" ]; then
-              echo "tag=v1.0.0" >> "$GITHUB_OUTPUT"
-            else
-              PREFIX=$(echo "$LATEST" | sed 's/\.[0-9]*$//')
-              PATCH=$(echo "$LATEST" | sed 's/v[0-9]*\.[0-9]*\.//')
-              echo "tag=${PREFIX}.$((PATCH + 1))" >> "$GITHUB_OUTPUT"
-            fi
+            TAG="${{ github.ref_name }}"
           fi
+          # Strip the leading "v" for MARKETING_VERSION (Apple expects 1.2.3).
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.version.outputs.tag }}
+          fetch-depth: 0
 
       - name: Check signing availability
         id: signing
@@ -59,6 +58,15 @@ jobs:
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Snapshot keychain search list
+        run: |
+          # L24 — Capture the original user-domain keychain search list so
+          # the cleanup step can restore it. No-op on GitHub-hosted
+          # ephemeral runners (image is discarded post-job); load-bearing
+          # on self-hosted runners where the original code left the search
+          # list permanently mutated.
+          security list-keychains -d user > "$RUNNER_TEMP/keychain-original.list"
 
       - name: Import signing certificate
         if: steps.signing.outputs.available == 'true'
@@ -89,6 +97,9 @@ jobs:
 
       - name: Build ghostty.saver (signed)
         if: steps.signing.outputs.available == 'true'
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
@@ -97,16 +108,23 @@ jobs:
             -derivedDataPath ./build \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
             OTHER_CODE_SIGN_FLAGS="--timestamp --options runtime"
 
       - name: Build ghostty.saver (unsigned)
         if: steps.signing.outputs.available != 'true'
+        env:
+          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
             -scheme ghostty \
             -configuration Release \
             -derivedDataPath ./build \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
             CODE_SIGNING_ALLOWED=NO
 
       - name: Ad-hoc sign bundle (unsigned builds)
@@ -185,7 +203,19 @@ jobs:
             ./build/Build/Products/Release/ghostty.saver.zip \
             --clobber
 
-      - name: Clean up keychain
+      - name: Clean up keychain and restore search list
         if: always()
         run: |
+          # Delete the temporary signing keychain (silent if it never got created).
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true
+
+          # L24 — restore the user-domain search list captured in the
+          # snapshot step. The list output is one quoted path per line; we
+          # strip quotes/whitespace and rebuild the argument list with
+          # xargs so paths with spaces survive intact.
+          if [ -f "$RUNNER_TEMP/keychain-original.list" ]; then
+            tr -d '"' < "$RUNNER_TEMP/keychain-original.list" \
+              | awk 'NF' \
+              | xargs -I {} echo {} \
+              | xargs security list-keychains -d user -s 2>/dev/null || true
+          fi
