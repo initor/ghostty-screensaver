@@ -100,7 +100,7 @@ macOS should then pick up the newly installed `.saver` file.
 ```
 ghostty-screensaver/
 ├── ghostty/
-│   ├── ghosttyView.{h,m}             # ScreenSaverView subclass: lifecycle, animation, drawing
+│   ├── GhosttyView.{h,m}             # ScreenSaverView subclass: lifecycle, animation, drawing
 │   ├── GhosttyFrameLoader.{h,m}      # Bundle scan, regex parse, NSAttributedString build
 │   └── static/animation_frames/       # 235 frame_NNN.txt files (the content)
 ├── ghostty.xcodeproj/                 # Xcode project (uses PBXFileSystemSynchronizedRootGroup)
@@ -110,7 +110,7 @@ ghostty-screensaver/
 ```
 
 Source is pure Objective-C with ARC enabled. Rendering goes through Core Text
-(`CTFramesetter` + `CTFrame`); see commits in `git log -- ghostty/ghosttyView.m`
+(`CTFramesetter` + `CTFrame`); see commits in `git log --follow -- ghostty/GhosttyView.m`
 for the architectural history.
 
 ### Build & iterate

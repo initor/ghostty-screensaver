@@ -1,5 +1,5 @@
 //
-//  ghosttyView.h
+//  GhosttyView.h
 //  ghostty
 //
 //  SPDX-License-Identifier: MIT
@@ -19,7 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// The class name is referenced as a string in
 /// INFOPLIST_KEY_NSPrincipalClass; any rename must update the project's
 /// Info.plist generation in lockstep.
-@interface ghosttyView : ScreenSaverView
+@interface GhosttyView : ScreenSaverView
 @end
 
 NS_ASSUME_NONNULL_END

@@ -1,12 +1,12 @@
 //
-//  ghosttyView.m
+//  GhosttyView.m
 //  ghostty
 //
 //  SPDX-License-Identifier: MIT
 //  Created by Wayne Wen on 1/11/25.
 //
 
-#import "ghosttyView.h"
+#import "GhosttyView.h"
 #import "GhosttyFrameLoader.h"
 #import <CoreText/CoreText.h>
 #import <os/log.h>
@@ -21,7 +21,7 @@ static os_log_t sLog;
 // by Instruments and zero-cost when no client is attached.
 static os_log_t sPOILog;
 
-@interface ghosttyView ()
+@interface GhosttyView ()
 
 // Process-shared, immutable. Acquired in init via
 // +[GhosttyFrameLoader sharedFramesForBundle:]; multi-display and
@@ -41,11 +41,11 @@ static os_log_t sPOILog;
 
 @end
 
-@implementation ghosttyView
+@implementation GhosttyView
 
 + (void)initialize
 {
-    if (self == [ghosttyView class]) {
+    if (self == [GhosttyView class]) {
         sLog = os_log_create("com.ghostty.screensaver", "View");
         sPOILog = os_log_create("com.ghostty.screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
     }
@@ -63,7 +63,7 @@ static os_log_t sPOILog;
         self.wantsLayer = YES;
         self.layer.backgroundColor = NSColor.blackColor.CGColor;
 
-        // Process-singleton frame array. The first ghosttyView pays the
+        // Process-singleton frame array. The first GhosttyView pays the
         // ~30 ms (warm) load cost; every subsequent instance — multi-
         // display, System Settings preview pane, view re-instantiation —
         // returns instantly with the same immutable array.

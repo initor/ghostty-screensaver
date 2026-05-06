@@ -223,7 +223,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
 
 #pragma mark - 3. Per-frame layout cost (legacy NSLayoutManager baseline)
 
-/// Builds the same NSTextStorage / NSLayoutManager / NSTextContainer stack that ghosttyView
+/// Builds the same NSTextStorage / NSLayoutManager / NSTextContainer stack that GhosttyView
 /// USED to use (pre-H6), then for each of 235 frames does setAttributedString +
 /// glyphRangeForTextContainer + usedRectForTextContainer. Reports mean per-frame cost.
 ///
