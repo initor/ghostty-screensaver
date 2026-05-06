@@ -12,7 +12,10 @@
 #import <os/log.h>
 #import <os/signpost.h>
 
-static const NSTimeInterval kGhosttyFrameInterval = 1.0 / 30.0;
+// Full-rate vs Low Power Mode rates. The screensaver is a textbook
+// discretionary workload, so M11 throttles to half-rate on battery + LPM.
+static const NSTimeInterval kGhosttyFrameIntervalNormal = 1.0 / 30.0;
+static const NSTimeInterval kGhosttyFrameIntervalLowPower = 1.0 / 15.0;
 static os_log_t sLog;
 // Always-on signpost log on the Points-of-Interest category. Auto-discovered
 // by Instruments and zero-cost when no client is attached.
@@ -67,17 +70,51 @@ static os_log_t sPOILog;
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [GhosttyFrameLoader sharedFramesForBundle:thisBundle];
 
-        self.animationTimeInterval = kGhosttyFrameInterval;
+        [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
         self.cachedOriginIndex = -1;
         self.cachedBoundsSize = frame.size;
 
+        // M11 — Track Low Power Mode and re-apply the rate on changes.
+        // The notification fires on the user toggling LPM from the menu
+        // bar / Settings, or on automatic enter/exit by the OS.
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(ghosttyPowerStateDidChange:)
+                                                     name:NSProcessInfoPowerStateDidChangeNotification
+                                                   object:nil];
+
         os_log_info(sLog,
-                    "Init view (preview=%{public}d, %.0fx%.0f, frames=%{public}lu)",
+                    "Init view (preview=%{public}d, %.0fx%.0f, frames=%{public}lu, lpm=%{public}d)",
                     isPreview, frame.size.width, frame.size.height,
-                    (unsigned long)self.frames.count);
+                    (unsigned long)self.frames.count,
+                    (int)NSProcessInfo.processInfo.lowPowerModeEnabled);
     }
     return self;
+}
+
+- (void)dealloc
+{
+    [[NSNotificationCenter defaultCenter] removeObserver:self
+                                                    name:NSProcessInfoPowerStateDidChangeNotification
+                                                  object:nil];
+}
+
+#pragma mark - Power state
+
+- (void)applyAnimationRateForCurrentPowerState
+{
+    BOOL lpm = NSProcessInfo.processInfo.lowPowerModeEnabled;
+    self.animationTimeInterval = lpm
+        ? kGhosttyFrameIntervalLowPower
+        : kGhosttyFrameIntervalNormal;
+}
+
+- (void)ghosttyPowerStateDidChange:(NSNotification *)note
+{
+    BOOL lpm = NSProcessInfo.processInfo.lowPowerModeEnabled;
+    os_log_info(sLog, "Power state change → lpm=%{public}d (%.1f Hz)",
+                (int)lpm, lpm ? 15.0 : 30.0);
+    [self applyAnimationRateForCurrentPowerState];
 }
 
 #pragma mark - Bounds Tracking
