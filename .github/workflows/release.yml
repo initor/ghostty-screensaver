@@ -101,10 +101,15 @@ jobs:
           MARKETING_VERSION: ${{ steps.version.outputs.version }}
           CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
+          # -destination 'generic/platform=macOS' is required for the
+          # build to honor ARCHS = "arm64 x86_64". Plain `xcodebuild
+          # build` without a destination locks to the runner's host arch
+          # (arm64 on macos-15) — caught during UAT on Xcode 26.
           xcodebuild clean build \
             -project ghostty.xcodeproj \
             -scheme ghostty \
             -configuration Release \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath ./build \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Developer ID Application" \
@@ -118,10 +123,12 @@ jobs:
           MARKETING_VERSION: ${{ steps.version.outputs.version }}
           CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
+          # See note in the signed-build step on -destination.
           xcodebuild clean build \
             -project ghostty.xcodeproj \
             -scheme ghostty \
             -configuration Release \
+            -destination 'generic/platform=macOS' \
             -derivedDataPath ./build \
             MARKETING_VERSION="$MARKETING_VERSION" \
             CURRENT_PROJECT_VERSION="$CURRENT_PROJECT_VERSION" \
