@@ -14,6 +14,9 @@
 
 static const NSTimeInterval kGhosttyFrameInterval = 1.0 / 30.0;
 static os_log_t sLog;
+// Always-on signpost log on the Points-of-Interest category. Auto-discovered
+// by Instruments and zero-cost when no client is attached.
+static os_log_t sPOILog;
 
 @interface ghosttyView ()
 
@@ -41,6 +44,7 @@ static os_log_t sLog;
 {
     if (self == [ghosttyView class]) {
         sLog = os_log_create("com.ghostty.screensaver", "View");
+        sPOILog = os_log_create("com.ghostty.screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
     }
 }
 
@@ -99,7 +103,13 @@ static os_log_t sLog;
 
 - (void)drawRect:(NSRect)rect
 {
+    os_signpost_id_t spid = os_signpost_id_generate(sPOILog);
+    os_signpost_interval_begin(sPOILog, spid, "DrawFrame",
+                               "frame=%{public}ld",
+                               (long)self.currentFrameIndex);
+
     if (self.frames.count == 0) {
+        os_signpost_interval_end(sPOILog, spid, "DrawFrame", "empty");
         return;
     }
 
@@ -154,6 +164,8 @@ static os_log_t sLog;
 
     CFRelease(ctFrame);
     CFRelease(framesetter);
+
+    os_signpost_interval_end(sPOILog, spid, "DrawFrame");
 }
 
 - (void)animateOneFrame
@@ -162,6 +174,9 @@ static os_log_t sLog;
         return;
     }
     self.currentFrameIndex = (self.currentFrameIndex + 1) % self.frames.count;
+    os_signpost_event_emit(sPOILog, OS_SIGNPOST_ID_EXCLUSIVE, "Tick",
+                           "frame=%{public}ld",
+                           (long)self.currentFrameIndex);
     [self setNeedsDisplay:YES];
 }
 

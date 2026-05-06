@@ -9,6 +9,7 @@
 #import "GhosttyFrameLoader.h"
 #import <AppKit/AppKit.h>
 #import <os/log.h>
+#import <os/signpost.h>
 
 // File-level statics, populated once in +initialize. The hot path
 // (attributedFrameFromRawHTML:) reads them branch-free, and every
@@ -23,6 +24,11 @@ static NSDictionary<NSAttributedStringKey, id> *sAttrsBlue;
 static NSRegularExpression *sSpanRegex;
 static NSRegularExpression *sFilenameRegex;
 static os_log_t sLog;
+// Always-on signposts. OS_LOG_CATEGORY_POINTS_OF_INTEREST is auto-discovered
+// by Instruments → Points of Interest and is a no-op cost when no client is
+// attached, so always-on (vs DEBUG-gated) lets users diagnose field issues
+// without a special build.
+static os_log_t sPOILog;
 
 @interface GhosttyFrameLoader ()
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw;
@@ -85,6 +91,7 @@ static os_log_t sLog;
     NSAssert(sFilenameRegex != nil, @"Filename regex must compile: %@", filenameRegexError);
 
     sLog = os_log_create("com.ghostty.screensaver", "FrameLoader");
+    sPOILog = os_log_create("com.ghostty.screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
 }
 
 #pragma mark - Public API
@@ -92,6 +99,9 @@ static os_log_t sLog;
 - (NSArray<NSAttributedString *> *)loadFramesFromBundle:(NSBundle *)bundle
 {
     NSParameterAssert(bundle != nil);
+
+    os_signpost_id_t spid = os_signpost_id_generate(sPOILog);
+    os_signpost_interval_begin(sPOILog, spid, "FrameLoad");
 
     NSDate *startDate = [NSDate date];
     NSArray<NSString *> *paths = [bundle pathsForResourcesOfType:@"txt" inDirectory:nil];
@@ -142,6 +152,11 @@ static os_log_t sLog;
                 elapsedMs,
                 (unsigned long)skippedNonFrame,
                 (unsigned long)skippedReadError);
+
+    os_signpost_interval_end(sPOILog, spid, "FrameLoad",
+                             "count=%{public}lu elapsedMs=%.1f",
+                             (unsigned long)loadedFrames.count,
+                             elapsedMs);
 
     return [loadedFrames copy];
 }
