@@ -1,161 +1,176 @@
+<div align="center">
+
 # Ghostty Screensaver
 
-A macOS screensaver that animates ASCII frames, originally inspired by [ghostty.org](https://ghostty.org/).
+<sub>An unofficial macOS screensaver of [Ghostty](https://ghostty.org/)'s homepage ASCII animation</sub>
 
-![Ghostty Screensaver Demo](assets/demo_1440.gif)
+<br>
 
-## Requirements
+[![Build](https://github.com/initor/ghostty-screensaver/actions/workflows/build.yml/badge.svg)](https://github.com/initor/ghostty-screensaver/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/initor/ghostty-screensaver?style=flat&color=222)](https://github.com/initor/ghostty-screensaver/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/initor/ghostty-screensaver/total?style=flat&color=222)](https://github.com/initor/ghostty-screensaver/releases)
+[![Platform](https://img.shields.io/badge/macOS-12%2B-222?style=flat)](#compatibility)
+[![License](https://img.shields.io/badge/license-MIT-222?style=flat)](LICENSE)
 
-- **macOS 12 (Monterey)** or later.
-- **Universal binary** — runs natively on Apple Silicon and on Intel Macs.
+<br>
 
-To verify the architecture of an installed copy:
+<!-- Theme-aware hero per github.com/orgs/community/discussions/16925:
+     dark mode shows the animated GIF; light mode shows a negated still
+     so the artwork sits on a light background instead of pasting a
+     stark black box onto white pages. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/demo_1440.gif">
+  <source media="(prefers-color-scheme: light)" srcset="assets/demo_light.png">
+  <img
+    alt="Ghostty screensaver — 235-frame ASCII ghost animation, white glyphs on black with periodic blue accents, looping on an idle macOS desktop."
+    src="assets/demo_1440.gif"
+    width="900">
+</picture>
+
+</div>
+
+---
+
+> **Unofficial fan project.** Not affiliated with, endorsed by, or sponsored by [Ghostty](https://ghostty.org/) or Mitchell Hashimoto. The 235 ASCII animation frames are reused from the public [ghostty-org/website](https://github.com/ghostty-org/website) repo under MIT — see [Acknowledgements](#acknowledgements).
+
+A native macOS `.saver` bundle that loops [Ghostty](https://ghostty.org/)'s homepage 235-frame ASCII animation through Core Text. Universal binary, 30 Hz on AC, 15 Hz under Low Power Mode. Pure Objective-C — no Electron, no WebView, no daemons.
+
+## Install
+
+1. Download `ghostty.saver.zip` from the [latest release](https://github.com/initor/ghostty-screensaver/releases) and unzip it.
+2. Double-click `ghostty.saver`. macOS opens **System Settings → Screen Saver** with **Ghostty Screensaver** ready to install.
+3. If macOS prompts about an unidentified developer, open **System Settings → Privacy & Security**, scroll to *Security*, and click **Open Anyway**.
+
+That's it. Verify the universal slice landed:
 
 ```bash
 lipo -archs ~/Library/Screen\ Savers/ghostty.saver/Contents/MacOS/ghostty
-# Should print: x86_64 arm64
+# x86_64 arm64
 ```
 
-## Installation
+<details>
+<summary><b>"ghostty.saver is damaged and can't be opened"</b></summary>
 
-### Option A: Download from Releases
-
-1. Download `ghostty.saver.zip` from the [latest release](https://github.com/initor/ghostty-screensaver/releases) (it saves to `~/Downloads` by default).
-2. Unzip the file to get `ghostty.saver`.
-3. Open Terminal and run:
-
-> [!IMPORTANT]
-> **You must run this command or macOS will say the file is "damaged and can't be opened."**
-> This is not a bug — macOS blocks all unsigned downloads with a misleading error.
-> The command below removes that block. It assumes the file is in `~/Downloads`;
-> change the path if you saved it elsewhere.
+Unsigned releases ship with a Gatekeeper quarantine flag. The file isn't damaged — strip the flag and re-open:
 
 ```bash
-xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
+xattr -dr com.apple.quarantine ~/Downloads/ghostty.saver
 ```
 
-4. Double-click the `.saver` file and follow any prompts to install.
-   - Alternatively, manually move it to `~/Library/Screen Savers/`.
+Adjust the path if you unzipped elsewhere. Signed/notarized releases skip this step. See the [Why is it unsigned?](#faq) FAQ entry below.
+</details>
 
-### Option B: Build from Source
+<details>
+<summary><b>New build doesn't show up after re-installing</b></summary>
 
-1. Clone this repository.
-2. Open `ghostty.xcodeproj` in Xcode (16.2+ recommended).
-3. **Use a Release build, not Debug.** Debug is unoptimized and single-arch only:
-   - In Xcode: `Product → Archive`, then `Distribute Content → Built Products` to get a Release `.saver`.
-   - Or from the command line:
-     ```bash
-     xcodebuild -project ghostty.xcodeproj \
-                -scheme ghostty \
-                -configuration Release \
-                -derivedDataPath ./build \
-                CODE_SIGNING_ALLOWED=NO
-     codesign -s - --force ./build/Build/Products/Release/ghostty.saver
-     ```
-     (Ad-hoc signing is required so legacyScreenSaver can read the bundled frame files — see commit history for details.)
-4. The `.saver` file lives at `./build/Build/Products/Release/ghostty.saver` (CLI build) or in your Xcode archive.
-5. Double-click to install, or copy/drag into `~/Library/Screen Savers/`.
-6. Select **Ghostty Screensaver** in System Settings → Screen Saver.
-
-### Installation Issues & Troubleshooting
-
-> "ghostty.saver is damaged and can't be opened"
-
-This happens when macOS quarantine blocks an unsigned download. Remove the quarantine attribute:
+`legacyScreenSaver` caches `.saver` bundles per process. Force a reload:
 
 ```bash
-xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
+killall legacyScreenSaver 2>/dev/null
+```
+</details>
+
+> Building from source? See [Develop](#develop).
+
+## Compatibility
+
+|                              | Apple Silicon (arm64) | Intel (x86_64)             |
+| ---------------------------- | --------------------- | -------------------------- |
+| **macOS 12** Monterey (min)  | Supported             | Supported                  |
+| **macOS 13** Ventura         | Supported             | Supported                  |
+| **macOS 14** Sonoma          | Supported             | Supported                  |
+| **macOS 15** Sequoia         | CI-built, smoke-tested | CI-built (universal slice) |
+| **macOS 26** Tahoe           | UAT'd                 | Not tested                 |
+
+Single universal `.saver` (`ARCHS = arm64 x86_64`, `MACOSX_DEPLOYMENT_TARGET = 12.0`). No per-architecture code paths.
+
+## How it works
+
+`GhosttyView` is an `NSScreenSaverView` subclass loaded by macOS's `legacyScreenSaver` host. Each tick it builds a fresh `CTFramesetter` + `CTFrame` from the current pre-attributed frame and releases both before returning — Core Text instead of `NSLayoutManager` because the latter's caches grew unboundedly under per-frame `setAttributedString:` swaps (~1.6 KB/frame, no plateau over 7050 frames on macOS 26). The 235-element `NSAttributedString` array loads once per process via `dispatch_once`, shared across every `NSScreen`, the System Settings preview pane, and view re-instantiations. The view is layer-backed (`wantsLayer = YES`) so the per-tick black background is a `CALayer.backgroundColor` GPU composite, not a CPU `NSRectFill`.
+
+- 30 Hz on AC, 15 Hz in Low Power Mode (via `NSProcessInfoPowerStateDidChangeNotification`).
+- Frame array singleton — multi-display + Settings preview share one ~2.7 MB load.
+- `drawRect:` is allocation-free in steady state; `(usedSize, origin)` is cached per frame index.
+- `os_signpost` Points-of-Interest are always on — Instruments-ready, zero cost when detached.
+
+## FAQ
+
+> **Why does macOS say the file is "damaged" or "from an unidentified developer"?**
+
+The release `.zip` is unsigned (no Apple Developer ID), so macOS quarantines it on download and shows a misleading error. Run `xattr -dr com.apple.quarantine ~/Downloads/ghostty.saver` to clear the flag, or click **Open Anyway** in *System Settings → Privacy & Security* after the first failed open. Signed/notarized builds skip both prompts; the GitHub Actions release workflow produces one automatically when an Apple cert is configured.
+
+> **My new build doesn't show up after re-installing — what gives?**
+
+`legacyScreenSaver` caches `.saver` bundles per process and won't pick up a fresh install until it restarts. Run `killall legacyScreenSaver` (or reboot) and re-open *System Settings → Screen Saver*.
+
+> **Does it work on multiple displays / external monitors?**
+
+Yes. macOS instantiates one `GhosttyView` per active screen; the 235-frame array is a process singleton (`dispatch_once`), so multi-display setups share a single ~2.7 MB load instead of paying it per screen. All displays animate independently at the same rate.
+
+> **What's the battery / CPU impact?**
+
+Negligible on Apple Silicon, modest on Intel. The view auto-throttles to 15 Hz under Low Power Mode, uses a layer-backed view so WindowServer composites on the GPU, and `drawRect:` is allocation-free in steady state. To be extra-conservative on battery, toggle Low Power Mode.
+
+> **How do I customize the colors or supply my own ASCII art?**
+
+See [FRAMES.md](FRAMES.md) for filename rules, encoding, span syntax, and adding a highlight color. Drop new frames into `ghostty/static/animation_frames/` and rebuild — no code changes needed for content.
+
+> **How do I uninstall?**
+
+```bash
+rm -rf ~/Library/Screen\ Savers/ghostty.saver
+killall legacyScreenSaver 2>/dev/null
 ```
 
-Adjust the path if you unzipped it somewhere other than `~/Downloads`. Then double-click the `.saver` file again to install.
+That's the whole footprint — no launch agents, no preferences pane, no `~/Library/Application Support` directory. (If you installed under `/Library/Screen Savers/` for all users, use `sudo` and that path instead.)
 
-> "App cannot be opened because the developer cannot be verified"
+## Develop
 
-macOS Gatekeeper may block the `.saver` file. To work around this:
+```bash
+git clone https://github.com/initor/ghostty-screensaver.git
+cd ghostty-screensaver
+open ghostty.xcodeproj   # Xcode 16.2+
+```
 
-1. System Settings (macOS Ventura or later):
-
-- Open `System Settings → Privacy & Security`.
-- Scroll down to the "Security" section. You should see a warning about "Ghostty.saver" being blocked.
-- Click `"Open Anyway"` to allow installation.
-
-2. Security & Privacy (macOS Monterey or earlier):
-
-- Go to System Preferences → Security & Privacy → General.
-- You might see a message that says "Ghostty.saver was blocked from opening because it is not from an identified developer."
-- Click "Open Anyway" and confirm.
-
-> [!NOTE]
-> Once installed, if the new version of the screensaver doesn't **load** immediately, try:
-
-- Rebooting your Mac, or
-- Killing the `legacyScreenSaver` processes in Activity Monitor (search for "legacyScreenSaver" and force quit).
-
-macOS should then pick up the newly installed `.saver` file.
-
-## Development
+Press <kbd>⌘ R</kbd> to run the saver in Xcode's preview pane, or <kbd>⌘ B</kbd> to build without launching. For an end-to-end test against the real `legacyScreenSaver` host, do a Release build (`Product → Archive`, or `xcodebuild -configuration Release`), copy `ghostty.saver` into `~/Library/Screen Savers/`, and `killall legacyScreenSaver`.
 
 ### Project layout
 
 ```
-ghostty-screensaver/
-├── ghostty/
-│   ├── GhosttyView.{h,m}             # ScreenSaverView subclass: lifecycle, animation, drawing
-│   ├── GhosttyFrameLoader.{h,m}      # Bundle scan, regex parse, NSAttributedString build
-│   └── static/animation_frames/       # 235 frame_NNN.txt files (the content)
-├── ghostty.xcodeproj/                 # Xcode project (uses PBXFileSystemSynchronizedRootGroup)
-├── .github/workflows/                 # CI (build) + release (tag-driven)
-├── FRAMES.md                          # Frame file format specification
-└── README.md                          # this file
+ghostty/
+├── GhosttyView.{h,m}            ScreenSaverView subclass — lifecycle, drawing, LPM
+├── GhosttyFrameLoader.{h,m}     Bundle scan, span parser, dispatch_once cache
+└── static/animation_frames/     235 frame_NNN.txt files (the content)
+ghostty.xcodeproj/               PBXFileSystemSynchronizedRootGroup — auto-includes new files
+.github/workflows/               CI: universal Release build on PR; release on tag
+FRAMES.md                        Frame file format spec
+LICENSE                          MIT (wrapper) + upstream MIT (frames)
 ```
 
-Source is pure Objective-C with ARC enabled. Rendering goes through Core Text
-(`CTFramesetter` + `CTFrame`); see commits in `git log --follow -- ghostty/GhosttyView.m`
-for the architectural history.
+Pure Objective-C, ARC. Rendering uses Core Text. For history: `git log --follow -- ghostty/GhosttyView.m`.
 
-### Build & iterate
+### Logs
 
-- **Cmd-B** in Xcode to build.
-- **Cmd-R** runs the screensaver target inside Xcode's preview UI.
-- For an end-to-end test, build Release, install the `.saver` into
-  `~/Library/Screen Savers/`, and trigger the saver from System Settings.
-  Note that **the `legacyScreenSaver` host caches loaded `.saver` bundles** —
-  re-installing a new build often requires killing the host process:
-  ```bash
-  killall legacyScreenSaver 2>/dev/null
-  ```
-- **Logs:** the saver writes to the unified log subsystem `com.ghostty.screensaver`.
-  Tail with:
-  ```bash
-  log stream --predicate 'subsystem == "com.ghostty.screensaver"'
-  ```
+```bash
+log stream --predicate 'subsystem == "com.initor.ghostty-screensaver"'
+```
 
-### Adding new frames or colors
+`os_signpost` intervals (`FrameLoad`, `DrawFrame`, `Tick`) appear in **Instruments → Points of Interest** with no extra build flags.
 
-See [FRAMES.md](FRAMES.md) — covers the `frame_NNN.txt` filename rules,
-encoding, the `<span class="b">…</span>` tag syntax (multi-line allowed,
-nested not), and how to wire up an additional highlight color.
+### Releasing
 
-### Features
+Push a `vX.Y.Z` tag on `main`; `.github/workflows/release.yml` builds a universal `.saver`, signs and notarizes if `DEVELOPER_ID_*` / `APPLE_*` secrets are configured, otherwise ad-hoc-signs and ships unsigned with quarantine instructions baked into the release notes.
 
-- Loads ASCII frames from `.txt` files in the screensaver's Resources folder.
-- Parses `<span class="b">…</span>` as blue `(0,0,230)`, everything else is white `(215,215,215)`.
-- Animates frames at 30 FPS.
-- Frames are loaded once per process (`dispatch_once`) and shared across
-  multi-display setups and the System Settings preview pane.
+## Contributing
 
-### Code review artifacts
+PRs welcome. For new frames, see [FRAMES.md](FRAMES.md) — by submitting a frame file, you affirm you authored it, or that it is sourced from a repo whose license permits redistribution under MIT (cite the source in the PR). Wrapper-code contributions are MIT, inbound = outbound.
 
-The `.planning/review/` tree (gitignored, local only) contains a
-deduplicated synthesis of a 24-reviewer parallel code review (12
-craftsmanship/performance lenses + 12 benchmark/test-coverage lenses)
-plus a live bench run captured from this codebase. See
-`.planning/review/DASHBOARD.html` for the visual summary.
+## Acknowledgements
 
-## Credits
+The 235 ASCII animation frames in `ghostty/static/animation_frames/` were created by the [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames) contributors and are reused here with attribution under MIT (Copyright (c) 2024 Ghostty). All artistic credit for the animation belongs to the upstream authors. The wrapper around them — `ScreenSaverView` host, frame loader, build pipeline — is original work.
 
-Original ASCII frames from [ghostty.org](https://ghostty.org/) via the [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames) repository.
+If you are an upstream contributor and prefer different attribution wording, or want the frames removed, please open an issue.
 
 ## License
 
-MIT — see source headers.
+MIT — see [LICENSE](LICENSE). The frame corpus retains its upstream MIT (Copyright (c) 2024 Ghostty); both notices are reproduced in `LICENSE`.

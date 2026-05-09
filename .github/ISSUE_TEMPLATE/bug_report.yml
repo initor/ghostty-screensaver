@@ -1,0 +1,103 @@
+name: Bug report
+description: Something isn't working — animation stutters, screensaver won't install, crash, etc.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a report. Please complete the environment fields
+        below — most screensaver bugs are environment-specific (macOS
+        version, chip, Low Power Mode state) and the fastest fixes start
+        from a complete picture.
+
+        Before filing: have you read the README's
+        [Install](https://github.com/initor/ghostty-screensaver#install) and
+        [FAQ](https://github.com/initor/ghostty-screensaver#faq) sections?
+        Most install friction collapses to the quarantine flag or the
+        `legacyScreenSaver` cache.
+
+  - type: input
+    id: version
+    attributes:
+      label: ghostty-screensaver version
+      description: From the GitHub Releases page, or `defaults read ~/Library/Screen\ Savers/ghostty.saver/Contents/Info CFBundleShortVersionString`.
+      placeholder: e.g. v1.7.0 or "built from commit abc1234"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: macos
+    attributes:
+      label: macOS version
+      options:
+        - "macOS 12 Monterey"
+        - "macOS 13 Ventura"
+        - "macOS 14 Sonoma"
+        - "macOS 15 Sequoia"
+        - "macOS 26 Tahoe"
+        - "Other (note in description)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Chip
+      options:
+        - "Apple Silicon (M1/M2/M3/M4 etc.)"
+        - "Intel"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: lpm
+    attributes:
+      label: Low Power Mode
+      options:
+        - "Off"
+        - "On"
+        - "Don't know"
+    validations:
+      required: true
+
+  - type: input
+    id: displays
+    attributes:
+      label: Display setup
+      placeholder: e.g. "single internal", "internal + 1 external 4K", "3-display"
+    validations:
+      required: false
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: One paragraph describing the bug. Include any error message exactly as macOS showed it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install vX.Y.Z from Releases
+        2. Open System Settings → Screen Saver
+        3. Select Ghostty Screensaver
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional but helpful)
+      description: |
+        Run this in Terminal while reproducing the bug, then paste the output:
+        ```
+        log stream --predicate 'subsystem == "com.initor.ghostty-screensaver"' --info
+        ```
+      render: shell
+    validations:
+      required: false
