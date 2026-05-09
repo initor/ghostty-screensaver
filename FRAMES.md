@@ -5,6 +5,13 @@ content of this screensaver. This document describes their format so new
 frames or new highlight colors can be added without reverse-engineering
 the loader.
 
+> **Attribution.** The current 235-frame corpus is derived from
+> [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames),
+> Copyright (c) 2024 Ghostty, redistributed under MIT. See
+> [LICENSE](LICENSE) for the full upstream notice. This document covers
+> the file format, not the artwork — new contributions under the same
+> format are welcome (see [Contributing](README.md#contributing)).
+
 ## File location and naming
 
 - **Path:** `ghostty/static/animation_frames/frame_NNN.txt`

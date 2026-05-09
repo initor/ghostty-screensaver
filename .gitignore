@@ -1,5 +1,20 @@
-# Ignore user-specific workspace settings
+# macOS
+.DS_Store
+
+# Xcode — user-specific
 project.xcworkspace/xcuserdata/
 *.xcuserdatad/
+*.xcuserstate
 *.xcscmblueprint
+*.xccheckout
+*.moved-aside
+xcuserdata/
+
+# Build artifacts
+build/
+DerivedData/
+.build/
+
+# Local planning / review artifacts (not for distribution)
+.planning/
 

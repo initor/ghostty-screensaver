@@ -46,8 +46,8 @@ static os_log_t sPOILog;
 + (void)initialize
 {
     if (self == [GhosttyView class]) {
-        sLog = os_log_create("com.ghostty.screensaver", "View");
-        sPOILog = os_log_create("com.ghostty.screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+        sLog = os_log_create("com.initor.ghostty-screensaver", "View");
+        sPOILog = os_log_create("com.initor.ghostty-screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
     }
 }
 
@@ -167,12 +167,38 @@ static os_log_t sPOILog;
         usedSize = self.cachedDrawSize;
         origin = self.cachedDrawOrigin;
     } else {
-        usedSize = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            textRange,
-            NULL,
-            CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX),
-            NULL);
+        // CTFramesetterSuggestFrameSizeWithConstraints silently strips
+        // trailing whitespace from each line's typographic width. The
+        // 235 frames are 100-column ASCII art with symmetric leading
+        // and trailing space padding (see FRAMES.md), so the trailing
+        // cols get dropped from the measurement while the leading cols
+        // still render — centering on that narrower box pushes the
+        // visible glyphs ~77 pt right of midX.
+        //
+        // Fix: measure a single canonical full-width line at the same
+        // font. CTLineGetTypographicBounds includes trailing whitespace,
+        // so this returns the true rendered width of every frame line.
+        NSString *raw = attr.string;
+        NSRange firstNL = [raw rangeOfString:@"\n"];
+        NSUInteger cols = (firstNL.location != NSNotFound)
+                        ? firstNL.location : raw.length;
+        NSDictionary *probeAttrs = [attr attributesAtIndex:0
+                                            effectiveRange:NULL];
+        NSString *fullLine = [@"" stringByPaddingToLength:cols
+                                              withString:@" "
+                                         startingAtIndex:0];
+        NSAttributedString *probe = [[NSAttributedString alloc]
+            initWithString:fullLine attributes:probeAttrs];
+        CTLineRef probeLine = CTLineCreateWithAttributedString(
+            (__bridge CFAttributedStringRef)probe);
+        CGFloat trueWidth = CTLineGetTypographicBounds(probeLine, NULL, NULL, NULL);
+        CFRelease(probeLine);
+
+        CGSize suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter, textRange, NULL,
+            CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL);
+
+        usedSize = CGSizeMake(trueWidth, suggested.height);
         origin = CGPointMake(NSMidX(self.bounds) - usedSize.width  / 2.0,
                              NSMidY(self.bounds) - usedSize.height / 2.0);
         self.cachedDrawSize    = usedSize;

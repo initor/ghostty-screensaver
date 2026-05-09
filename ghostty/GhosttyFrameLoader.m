@@ -90,8 +90,8 @@ static os_log_t sPOILog;
                                                                   error:&filenameRegexError];
     NSAssert(sFilenameRegex != nil, @"Filename regex must compile: %@", filenameRegexError);
 
-    sLog = os_log_create("com.ghostty.screensaver", "FrameLoader");
-    sPOILog = os_log_create("com.ghostty.screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+    sLog = os_log_create("com.initor.ghostty-screensaver", "FrameLoader");
+    sPOILog = os_log_create("com.initor.ghostty-screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
 }
 
 #pragma mark - Public API
