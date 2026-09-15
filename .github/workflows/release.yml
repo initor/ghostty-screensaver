@@ -1,9 +1,11 @@
 name: Release
 
-# B7 round-2 finding: dropping the workflow_run trigger eliminates the
-# auto-release spam (8 of 12 historic tags shipped in a 2 h burst, two
-# duplicate-SHA tag pairs). Releases now require an explicit tag push.
+# Only successful main-push CI runs may allocate an automatic version.
 on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
   push:
     tags:
       - "v*"
@@ -15,38 +17,75 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
-# Coalesce in-flight releases on rapid tag pushes.
+# Preserve pending releases instead of replacing them with the latest merge.
 concurrency:
   group: release
-  cancel-in-progress: true
+  queue: max
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: Build and Release
-    runs-on: macos-15
-    timeout-minutes: 30
-
+  prepare:
+    name: Select verified release
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+      skip: ${{ steps.version.outputs.skip }}
+      ci_url: ${{ steps.version.outputs.ci_url }}
+      automation_sha: ${{ steps.automation.outputs.sha }}
     steps:
-      - name: Determine version
-        id: version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-          else
-            TAG="${{ github.ref_name }}"
-          fi
-          # Strip the leading "v" for MARKETING_VERSION (Apple expects 1.2.3).
-          VERSION="${TAG#v}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout
+      - name: Checkout release automation
         uses: actions/checkout@v7
         with:
-          ref: ${{ steps.version.outputs.tag }}
-          fetch-depth: 0
+          ref: main
+          persist-credentials: false
+      - name: Pin release automation
+        id: automation
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Test release selection and recovery
+        run: python3 -m unittest discover -s .github/scripts -p 'test_release.py' -v
+      - name: Select version and reserve exact tag
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: python3 .github/scripts/release.py prepare
+
+  release:
+    name: Build and Release
+    needs: prepare
+    if: needs.prepare.outputs.skip != 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Checkout pinned release automation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.automation_sha }}
+          path: release-automation
+          persist-credentials: false
 
       - name: Check signing availability
         id: signing
@@ -98,7 +137,7 @@ jobs:
       - name: Build ghostty.saver (signed)
         if: steps.signing.outputs.available == 'true'
         env:
-          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          MARKETING_VERSION: ${{ needs.prepare.outputs.version }}
           CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
           # -destination 'generic/platform=macOS' is required for the
@@ -120,7 +159,7 @@ jobs:
       - name: Build ghostty.saver (unsigned)
         if: steps.signing.outputs.available != 'true'
         env:
-          MARKETING_VERSION: ${{ steps.version.outputs.version }}
+          MARKETING_VERSION: ${{ needs.prepare.outputs.version }}
           CURRENT_PROJECT_VERSION: ${{ github.run_number }}
         run: |
           # See note in the signed-build step on -destination.
@@ -162,6 +201,26 @@ jobs:
 
           xcrun stapler staple "$SAVER_PATH"
 
+      - name: Verify version and rendered bundle
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          SAVER_PATH="$PWD/build/Build/Products/Release/ghostty.saver"
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SAVER_PATH/Contents/Info.plist")" = "$RELEASE_VERSION"
+          EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$SAVER_PATH/Contents/Info.plist")
+          lipo "$SAVER_PATH/Contents/MacOS/$EXECUTABLE" -verify_arch arm64 x86_64
+          codesign --verify --strict --verbose=2 "$SAVER_PATH"
+          bash release-automation/tests/verify-rendering.sh "$SAVER_PATH" "$RUNNER_TEMP/render-verification"
+
+      - name: Upload rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-rendering-${{ needs.prepare.outputs.tag }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/render-verification
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Package ghostty.saver.zip
         run: |
           cd ./build/Build/Products/Release
@@ -171,7 +230,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SIGNING_AVAILABLE: ${{ steps.signing.outputs.available }}
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+          CI_URL: ${{ needs.prepare.outputs.ci_url }}
         run: |
           if [ "$SIGNING_AVAILABLE" = "true" ]; then
           cat > release-notes.md << 'NOTES'
@@ -202,13 +263,9 @@ jobs:
           NOTES
           fi
 
-          gh release create "$RELEASE_TAG" \
-            --notes-file release-notes.md \
-            --generate-notes \
-            --title "$RELEASE_TAG" 2>/dev/null || true
-          gh release upload "$RELEASE_TAG" \
-            ./build/Build/Products/Release/ghostty.saver.zip \
-            --clobber
+          python3 release-automation/.github/scripts/release.py publish \
+            --notes release-notes.md \
+            --asset ./build/Build/Products/Release/ghostty.saver.zip
 
       - name: Clean up keychain and restore search list
         if: always()

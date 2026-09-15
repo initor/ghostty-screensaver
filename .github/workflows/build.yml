@@ -5,20 +5,50 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     name: Build
     runs-on: macos-15
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Build ghostty.saver
+      - name: Test release policy
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
+      - name: Build universal ghostty.saver
         run: |
           xcodebuild clean build \
             -project ghostty.xcodeproj \
             -scheme ghostty \
             -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath ./build \
+            ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO
+          codesign -s - --force ./build/Build/Products/Release/ghostty.saver
+          lipo ./build/Build/Products/Release/ghostty.saver/Contents/MacOS/ghostty -verify_arch arm64 x86_64
+
+      - name: Verify rendered centering
+        run: bash tests/verify-rendering.sh ./build/Build/Products/Release/ghostty.saver ./build/verification
+
+      - name: Package verified candidate
+        run: ditto -c -k --sequesterRsrc --keepParent ./build/Build/Products/Release/ghostty.saver ./build/ghostty.saver.zip
+
+      - name: Upload candidate and rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghostty-candidate-${{ github.sha }}
+          path: |
+            build/ghostty.saver.zip
+            build/verification/
+          if-no-files-found: error
+          retention-days: 14
