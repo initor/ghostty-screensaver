@@ -208,7 +208,7 @@ jobs:
           SAVER_PATH="$PWD/build/Build/Products/Release/ghostty.saver"
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SAVER_PATH/Contents/Info.plist")" = "$RELEASE_VERSION"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$SAVER_PATH/Contents/Info.plist")
-          lipo -verify_arch arm64 x86_64 "$SAVER_PATH/Contents/MacOS/$EXECUTABLE"
+          lipo "$SAVER_PATH/Contents/MacOS/$EXECUTABLE" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=2 "$SAVER_PATH"
           bash release-automation/tests/verify-rendering.sh "$SAVER_PATH" "$RUNNER_TEMP/render-verification"
 
