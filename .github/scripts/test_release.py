@@ -12,6 +12,32 @@ OTHER_SHA = "b" * 40
 REPO = "initor/ghostty-screensaver"
 
 
+class DraftLookupTests(unittest.TestCase):
+    def test_draft_is_found_when_tag_endpoint_returns_not_found(self):
+        api = release.API(REPO)
+        draft = {"id": 1, "tag_name": "v1.7.1", "draft": True, "assets": []}
+        with patch.object(api, "request", return_value=None) as request, \
+                patch.object(api, "pages", return_value=iter([
+                    {"tag_name": "v1.7.0", "draft": False}, draft])) as pages:
+            self.assertEqual(api.release("v1.7.1"), draft)
+            request.assert_called_once_with("releases/tags/v1.7.1", missing=True)
+            pages.assert_called_once_with("releases")
+
+    def test_published_release_does_not_need_listing(self):
+        api = release.API(REPO)
+        published = {"tag_name": "v1.7.1", "draft": False}
+        with patch.object(api, "request", return_value=published), \
+                patch.object(api, "pages") as pages:
+            self.assertEqual(api.release("v1.7.1"), published)
+            pages.assert_not_called()
+
+    def test_absent_release_remains_absent(self):
+        api = release.API(REPO)
+        with patch.object(api, "request", return_value=None), \
+                patch.object(api, "pages", return_value=iter([])):
+            self.assertIsNone(api.release("v1.7.1"))
+
+
 class FakeAPI:
     repo = REPO
 
@@ -72,10 +98,10 @@ class ReleaseTests(unittest.TestCase):
             with self.subTest(code=code), patch.dict("os.environ", {"GH_TOKEN": "test"}), patch(
                     "release.urllib.request.urlopen", side_effect=error):
                 if code == 404:
-                    self.assertIsNone(release.API(REPO).release("v1.7.2"))
+                    self.assertIsNone(release.API(REPO).request("releases/tags/v1.7.2", missing=True))
                 else:
                     with self.assertRaises(urllib.error.HTTPError):
-                        release.API(REPO).release("v1.7.2")
+                        release.API(REPO).request("releases/tags/v1.7.2", missing=True)
 
     def test_numeric_patch_and_stable_filter(self):
         self.assertEqual(release.next_tag(["v1.9.9", "v1.10.10", "v2.0.0-rc1", "garbage"]), "v1.10.11")

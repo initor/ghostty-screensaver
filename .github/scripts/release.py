@@ -72,7 +72,11 @@ class API:
         raise ValueError(f"Tag does not resolve to a commit: {tag}")
 
     def release(self, tag):
-        return self.request(f"releases/tags/{tag}", missing=True)
+        published = self.request(f"releases/tags/{tag}", missing=True)
+        if published:
+            return published
+        # The tag endpoint excludes drafts; the authenticated listing includes them.
+        return next((r for r in self.pages("releases") if r["tag_name"] == tag), None)
 
 
 def published_complete(release):
