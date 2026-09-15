@@ -6,7 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.1] — 2026-09-15
+
+### Fixed
+- Publish the previously merged horizontal-centering correction missing from v1.7.0.
+- Recompute centering when the host changes view bounds without advancing the animation.
+
 ### Added
+- Native rendering regression checks and downloadable CI candidate artifacts.
+- Automatic patch releases after successful CI on `main`, pinned to the tested commit with duplicate-release protection.
 - `LICENSE` file at repo root with wrapper MIT (Wayne Wen, 2026) and upstream
   MIT (Ghostty, 2024) reproduced per MIT clause 2.
 - `CONTRIBUTING.md`, `SECURITY.md`, `.github/ISSUE_TEMPLATE/bug_report.yml`,
@@ -64,7 +72,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/initor/ghostty-screensaver/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/initor/ghostty-screensaver/releases/tag/v1.7.0
 [1.6.5]: https://github.com/initor/ghostty-screensaver/releases/tag/v1.6.5
 [1.6.0]: https://github.com/initor/ghostty-screensaver/releases/tag/v1.6.0

@@ -37,7 +37,7 @@ static os_log_t sPOILog;
 @property (nonatomic, assign) NSInteger cachedOriginIndex;
 @property (nonatomic, assign) CGSize cachedDrawSize;
 @property (nonatomic, assign) CGPoint cachedDrawOrigin;
-@property (nonatomic, assign) CGSize cachedBoundsSize;
+@property (nonatomic, assign) CGRect cachedBounds;
 
 @end
 
@@ -73,7 +73,7 @@ static os_log_t sPOILog;
         [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
         self.cachedOriginIndex = -1;
-        self.cachedBoundsSize = frame.size;
+        self.cachedBounds = self.bounds;
 
         // M11 — Track Low Power Mode and re-apply the rate on changes.
         // The notification fires on the user toggling LPM from the menu
@@ -117,17 +117,6 @@ static os_log_t sPOILog;
     [self applyAnimationRateForCurrentPowerState];
 }
 
-#pragma mark - Bounds Tracking
-
-- (void)setFrame:(NSRect)frame
-{
-    [super setFrame:frame];
-    if (!CGSizeEqualToSize(self.cachedBoundsSize, frame.size)) {
-        self.cachedOriginIndex = -1;  // origin depends on bounds
-        self.cachedBoundsSize = frame.size;
-    }
-}
-
 #pragma mark - ScreenSaverView Lifecycle
 
 // startAnimation / stopAnimation use ScreenSaverView's defaults. The view
@@ -159,11 +148,12 @@ static os_log_t sPOILog;
     // Used-rect and centered origin are stable for a given (index, bounds)
     // pair. Cache so steady-state animation only recomputes when the index
     // advances (every tick by definition) but not when drawRect: is called
-    // for non-animation reasons (resize, occlusion change). Bounds changes
-    // invalidate via -setFrame: above.
+    // for non-animation reasons (occlusion changes). Include the full bounds
+    // in the cache key: hosts can change bounds without calling setFrame:.
     CGSize usedSize;
     CGPoint origin;
-    if (self.cachedOriginIndex == self.currentFrameIndex) {
+    if (self.cachedOriginIndex == self.currentFrameIndex &&
+        CGRectEqualToRect(self.cachedBounds, self.bounds)) {
         usedSize = self.cachedDrawSize;
         origin = self.cachedDrawOrigin;
     } else {
@@ -204,6 +194,7 @@ static os_log_t sPOILog;
         self.cachedDrawSize    = usedSize;
         self.cachedDrawOrigin  = origin;
         self.cachedOriginIndex = self.currentFrameIndex;
+        self.cachedBounds      = self.bounds;
     }
 
     CGRect pathRect = CGRectMake(origin.x, origin.y, usedSize.width, usedSize.height);

@@ -142,7 +142,8 @@ ghostty/
 ├── GhosttyFrameLoader.{h,m}     Bundle scan, span parser, dispatch_once cache
 └── static/animation_frames/     235 frame_NNN.txt files (the content)
 ghostty.xcodeproj/               PBXFileSystemSynchronizedRootGroup — auto-includes new files
-.github/workflows/               CI: universal Release build on PR; release on tag
+.github/workflows/               CI: universal build and rendering checks; automatic releases
+tests/                          Native rendering regression checks against the built saver
 FRAMES.md                        Frame file format spec
 LICENSE                          MIT (wrapper) + upstream MIT (frames)
 ```
@@ -159,7 +160,17 @@ log stream --predicate 'subsystem == "com.initor.ghostty-screensaver"'
 
 ### Releasing
 
-Push a `vX.Y.Z` tag on `main`; `.github/workflows/release.yml` builds a universal `.saver`, signs and notarizes if `DEVELOPER_ID_*` / `APPLE_*` secrets are configured, otherwise ad-hoc-signs and ships unsigned with quarantine instructions baked into the release notes.
+Every push to `main` (including a merged PR) automatically publishes the next patch release **after CI succeeds**. PR builds and failed CI runs never publish. The release uses the exact commit CI checked, and rerunning CI for an already-released commit does not create another version.
+
+CI builds a universal `.saver`, runs native rendering checks against it, and uploads a candidate ZIP and sample PNGs as an Actions artifact. The release workflow repeats the rendering checks before publication. To run the same checks locally against a downloaded bundle:
+
+```bash
+bash tests/verify-rendering.sh /path/to/ghostty.saver ./build/verification
+```
+
+For an explicit minor or major version, push a `vX.Y.Z` tag on `main`. Manual dispatch of the Release workflow accepts an existing tag for retries. Releases are serialized; an existing published asset is not overwritten.
+
+The workflow signs and notarizes if `DEVELOPER_ID_*` / `APPLE_*` secrets are configured, otherwise it ad-hoc-signs and ships with quarantine instructions in the release notes.
 
 ## Contributing
 
