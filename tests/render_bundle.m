@@ -10,13 +10,8 @@ static NSUInteger failures, checks;
 static NSMutableArray<NSString *> *failureMessages;
 static NSString *outputDirectory;
 static NSBundle *saverBundle;
-static CGFloat maximumVerticalErrorPoints;
-static NSString *worstVerticalCase;
-static NSUInteger centeredFrameChecks;
-
-static CGFloat VerticalError(NSDictionary *ink, NSBitmapImageRep *rep, CGFloat scale) {
-    return fabs(([ink[@"top"] doubleValue] + [ink[@"bottom"] doubleValue] + 1 - rep.pixelsHigh) / (2 * scale));
-}
+static NSMutableDictionary<NSNumber *, NSNumber *> *referenceCycleMidpoints;
+static NSMutableArray<NSDictionary *> *cycleResults;
 
 static void Check(BOOL ok, NSString *message) {
     checks++;
@@ -145,10 +140,10 @@ static void SavePNG(NSBitmapImageRep *rep, NSString *name) {
 // reuse the saver's first-line all-space probe or cached size/origin calculation.
 static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat scale,
                             NSSize *sizeOut, NSPoint *originOut, NSSize *inkSizeOut,
-                            NSString *label) CF_RETURNS_RETAINED;
+                            CGFloat cycleMidpoint, NSString *label) CF_RETURNS_RETAINED;
 static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat scale,
                             NSSize *sizeOut, NSPoint *originOut, NSSize *inkSizeOut,
-                            NSString *label) {
+                            CGFloat cycleMidpoint, NSString *label) {
     NSArray<NSString *> *lines = [text.string componentsSeparatedByString:@"\n"];
     NSUInteger lineCount = lines.count;
     if ([lines.lastObject length] == 0) lineCount--;
@@ -208,7 +203,7 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
     }
     CGFloat correction = (raster.pixelsHigh / 2.0 - centerPixel) / (rowDirection * scale);
     CGFloat localInkCenter = canvas.height / 2 - (probeOrigin.y + correction);
-    origin.y = NSMidY(bounds) - localInkCenter;
+    origin.y = NSMidY(bounds) - (isnan(cycleMidpoint) ? localInkCenter : cycleMidpoint);
     *inkSizeOut = NSMakeSize(([ink[@"right"] doubleValue] - [ink[@"left"] doubleValue] + 1) / scale,
                             ([ink[@"bottom"] doubleValue] - [ink[@"top"] doubleValue] + 1) / scale);
     CGPathRelease(path); CFRelease(frame);
@@ -217,6 +212,28 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
     *sizeOut = size; *originOut = origin;
     CGPathRelease(path); CFRelease(fs);
     return frame;
+}
+
+// Union independent pixel extents in one canonical layout, once per scale.
+static CGFloat ReferenceCycleMidpoint(NSArray<NSAttributedString *> *frames, CGFloat scale) {
+    NSNumber *cached = referenceCycleMidpoints[@(scale)];
+    if (cached) return cached.doubleValue;
+    CGFloat minimum = CGFLOAT_MAX, maximum = -CGFLOAT_MAX;
+    NSRect bounds = NSMakeRect(0, 0, 1920, 1080);
+    for (NSAttributedString *text in frames) {
+        @autoreleasepool {
+            NSSize size, inkSize; NSPoint origin;
+            CTFrameRef frame = Reference(text, bounds, scale, &size, &origin, &inkSize,
+                                         NAN, @"cycle raster probe");
+            CGFloat midpoint = NSMidY(bounds) - origin.y;
+            minimum = MIN(minimum, midpoint - inkSize.height / 2);
+            maximum = MAX(maximum, midpoint + inkSize.height / 2);
+            CFRelease(frame);
+        }
+    }
+    CGFloat midpoint = (minimum + maximum) / 2;
+    referenceCycleMidpoints[@(scale)] = @(midpoint);
+    return midpoint;
 }
 
 static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NSString *name,
@@ -228,7 +245,8 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     Check([[view valueForKey:@"currentFrameIndex"] unsignedIntegerValue] == index,
           [label stringByAppendingString:@" animation index"]);
     NSSize expectedSize, completeInkSize; NSPoint expectedOrigin;
-    CTFrameRef reference = Reference(frames[index], view.bounds, scale, &expectedSize, &expectedOrigin, &completeInkSize, label);
+    CTFrameRef reference = Reference(frames[index], view.bounds, scale, &expectedSize, &expectedOrigin,
+                                     &completeInkSize, ReferenceCycleMidpoint(frames, scale), label);
     NSBitmapImageRep *actual = Render(view, scale, NULL);
     NSBitmapImageRep *expected = Render(view, scale, reference);
     CFRelease(reference);
@@ -243,19 +261,10 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     NSDictionary *ink = Ink(actual), *referenceInk = Ink(expected);
     Check([ink[@"pixels"] unsignedIntegerValue] > 0 && [referenceInk[@"pixels"] unsignedIntegerValue] > 0,
           [label stringByAppendingString:@" nonblank actual and reference pixels"]);
-    BOOL fullScreen = ![name isEqualToString:@"preview-clipped"];
-    CGFloat verticalError = VerticalError(ink, actual, scale);
-    BOOL newWorst = NO;
+    BOOL fullScreen = ![name hasPrefix:@"preview-clipped"];
+    Check(fabs(actualOrigin.y - expectedOrigin.y) <= 1.0,
+          [label stringByAppendingString:@" origin matches independent cycle raster envelope within 1 pt"]);
     if (fullScreen) {
-        centeredFrameChecks++;
-        if (!worstVerticalCase || verticalError > maximumVerticalErrorPoints) {
-            maximumVerticalErrorPoints = verticalError;
-            worstVerticalCase = label;
-            newWorst = YES;
-        }
-        Check(verticalError <= 1.0, [NSString stringWithFormat:@"%@ visible vertical center error %.3f pt exceeds 1 pt", label, verticalError]);
-        Check(VerticalError(referenceInk, expected, scale) <= 1.0,
-              [label stringByAppendingString:@" independent raster-centered reference"]);
         CGFloat inkWidth = ([ink[@"right"] doubleValue] - [ink[@"left"] doubleValue] + 1) / scale;
         CGFloat inkHeight = ([ink[@"bottom"] doubleValue] - [ink[@"top"] doubleValue] + 1) / scale;
         Check(fabs(inkWidth - completeInkSize.width) <= 2 / scale &&
@@ -267,7 +276,7 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     }
     // Content oracle keeps the independently measured X, but follows the actual
     // Y translation so fractional raster phase cannot mask a missing glyph/row.
-    // The independent centering assertion above does not use actualOrigin.
+    // Cycle centering is checked independently from the union of actual pixels.
     CTFramesetterRef fs = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)frames[index]);
     CGPathRef alignedPath = CGPathCreateWithRect(NSMakeRect(expectedOrigin.x, actualOrigin.y,
         expectedSize.width, expectedSize.height), NULL);
@@ -287,22 +296,61 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     Check(different <= allowed,
           [NSString stringWithFormat:@"%@ full-frame pixel mismatch %lu (allowed %lu)", label,
               (unsigned long)different, (unsigned long)allowed]);
-    // Keep PNG evidence bounded even when an old release fails every frame.
-    // Every case has measured pixels in results.json; worst evidence is replaced.
-    if (newWorst) {
-        SavePNG(actual, @"worst-vertical-actual.png");
-        SavePNG(expected, @"worst-vertical-reference.png");
-    }
     if (save) {
         NSString *stem = [NSString stringWithFormat:@"%@-%03lu-%.0fx", name, (unsigned long)index, scale];
         SavePNG(actual, [stem stringByAppendingString:@"-actual.png"]);
         SavePNG(expected, [stem stringByAppendingString:@"-reference.png"]);
     }
     [samples addObject:@{@"case": label, @"ink": ink, @"referenceInk": referenceInk,
-        @"verticalCenterErrorPoints": @(verticalError), @"centeringRequired": @(fullScreen),
+        @"originY": @(actualOrigin.y), @"expectedOriginY": @(expectedOrigin.y),
         @"completeInkSize": NSStringFromSize(completeInkSize),
         @"differentPixels": @(different), @"canvasSize": NSStringFromSize(actualSize),
         @"canvasOrigin": NSStringFromPoint(actualOrigin), @"passed": @(failures == before)}];
+}
+
+static void TestCycle(ScreenSaverView *view, CGFloat scale, NSString *name, NSMutableArray *samples) {
+    CGFloat firstOrigin = 0, previousOrigin = 0, maximumStep = 0;
+    NSInteger top = NSIntegerMax, bottom = -1;
+    NSInteger referenceTop = NSIntegerMax, referenceBottom = -1;
+    for (NSUInteger i = 0; i < 235; i++) {
+        @autoreleasepool {
+            TestFrame(view, i, scale, name, i == 0 || i == 117 || i == 234, samples);
+            NSDictionary *sample = samples.lastObject;
+            CGFloat origin = [sample[@"originY"] doubleValue];
+            if (i == 0) firstOrigin = previousOrigin = origin;
+            CGFloat step = fabs(origin - previousOrigin);
+            maximumStep = MAX(maximumStep, step);
+            Check(fabs(origin - firstOrigin) <= 0.000001 && step <= 0.000001,
+                  [NSString stringWithFormat:@"%@ frame=%lu stable origin and zero step (%.6f pt)",
+                   name, (unsigned long)i, step]);
+            previousOrigin = origin;
+            top = MIN(top, [sample[@"ink"][@"top"] integerValue]);
+            bottom = MAX(bottom, [sample[@"ink"][@"bottom"] integerValue]);
+            referenceTop = MIN(referenceTop, [sample[@"referenceInk"][@"top"] integerValue]);
+            referenceBottom = MAX(referenceBottom, [sample[@"referenceInk"][@"bottom"] integerValue]);
+            [view animateOneFrame];
+        }
+    }
+    Check([[view valueForKey:@"currentFrameIndex"] unsignedIntegerValue] == 0,
+          [name stringByAppendingString:@" wraps after 235 frames"]);
+    TestFrame(view, 0, scale, [name stringByAppendingString:@"-wrap"], NO, samples);
+    CGFloat wrapOrigin = [samples.lastObject[@"originY"] doubleValue];
+    CGFloat wrapStep = fabs(wrapOrigin - previousOrigin);
+    maximumStep = MAX(maximumStep, wrapStep);
+    Check(fabs(wrapOrigin - firstOrigin) <= 0.000001 && wrapStep <= 0.000001,
+          [name stringByAppendingString:@" cyclic wrap preserves origin and zero step"]);
+    BOOL fullScreen = ![name hasPrefix:@"preview-clipped"];
+    CGFloat pixelsHigh = llround(view.bounds.size.height * scale);
+    CGFloat error = fabs((top + bottom + 1 - pixelsHigh) / (2 * scale));
+    CGFloat referenceError = fabs((referenceTop + referenceBottom + 1 - pixelsHigh) / (2 * scale));
+    if (fullScreen) {
+        Check(error <= 1.0, [NSString stringWithFormat:@"%@ whole-cycle pixel union center error %.3f pt exceeds 1 pt", name, error]);
+        Check(referenceError <= 1.0, [name stringByAppendingString:@" independent whole-cycle raster union is centered"]);
+    }
+    [cycleResults addObject:@{@"case": name, @"scale": @(scale), @"frames": @235,
+        @"originY": @(firstOrigin), @"maximumOriginStepPoints": @(maximumStep),
+        @"verticalCenterErrorPoints": @(error), @"referenceVerticalCenterErrorPoints": @(referenceError),
+        @"centeringRequired": @(fullScreen)}];
 }
 
 int main(int argc, const char *argv[]) {
@@ -312,6 +360,8 @@ int main(int argc, const char *argv[]) {
             return 2;
         }
         failureMessages = [NSMutableArray array];
+        referenceCycleMidpoints = [NSMutableDictionary dictionary];
+        cycleResults = [NSMutableArray array];
         outputDirectory = [[NSString stringWithUTF8String:argv[2]] stringByStandardizingPath];
         NSError *error = nil;
         if (![[NSFileManager defaultManager] createDirectoryAtPath:outputDirectory
@@ -364,37 +414,34 @@ int main(int argc, const char *argv[]) {
                 NSArray *frames = [view valueForKey:@"frames"];
                 Check(frames.count == 235, [NSString stringWithFormat:@"%@ loaded 235 frames", entry[0]]);
                 if (frames.count != 235) continue;
-                for (NSUInteger i = 0; i < 235; i++) {
-                    @autoreleasepool {
-                        TestFrame(view, i, 1, entry[0], i == 0 || i == 117 || i == 234, samples);
-                        [view animateOneFrame];
-                    }
-                }
-                Check([[view valueForKey:@"currentFrameIndex"] unsignedIntegerValue] == 0,
-                      [NSString stringWithFormat:@"%@ wraps after 235 frames", entry[0]]);
+                TestCycle(view, 1, entry[0], samples);
             }
             ScreenSaverView *view = NewView(NSMakeRect(0, 0, 1512, 982), NO);
             if ([[view valueForKey:@"frames"] count] == 235) {
-                for (NSUInteger i = 0; i < 235; i++) {
-                    @autoreleasepool {
-                        TestFrame(view, i, 2, @"retina", i == 0 || i == 117 || i == 234, samples);
-                        [view animateOneFrame];
-                    }
-                }
+                TestCycle(view, 2, @"retina", samples);
                 NSBitmapImageRep *first = Render(view, 1, NULL);
                 NSBitmapImageRep *second = Render(view, 1, NULL);
                 Check(PixelDifference(first, second) == 0, @"same-frame repeat render is identical");
+                CGFloat localMidpoint = NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y;
                 [view setFrame:NSMakeRect(0, 0, 1920, 1080)];
                 TestFrame(view, 0, 1, @"resize-frame", YES, samples);
+                Check(fabs(NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y - localMidpoint) <= 0.000001,
+                      @"frame resize preserves cycle midpoint");
                 [view setBoundsSize:NSMakeSize(1600, 1000)];
                 TestFrame(view, 0, 1, @"resize-bounds", YES, samples);
+                Check(fabs(NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y - localMidpoint) <= 0.000001,
+                      @"bounds resize preserves cycle midpoint");
                 [view setBoundsOrigin:NSMakePoint(19, -13)];
                 TestFrame(view, 0, 1, @"translate-bounds", YES, samples);
+                Check(fabs(NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y - localMidpoint) <= 0.000001,
+                      @"bounds translation preserves cycle midpoint");
                 ScreenSaverView *fresh = NewView(view.bounds, NO);
                 Check(PixelDifference(Render(view, 1, NULL), Render(fresh, 1, NULL)) == 0,
                       @"same-index bounds changes match fresh view");
                 [fresh stopAnimation]; [fresh startAnimation];
                 TestFrame(fresh, 0, 1, @"restart", YES, samples);
+                Check(fabs(NSMidY(fresh.bounds) - [[fresh valueForKey:@"cachedDrawOrigin"] pointValue].y - localMidpoint) <= 0.000001,
+                      @"restart preserves cycle midpoint");
                 [fresh stopAnimation];
             }
         } @catch (NSException *exception) {
@@ -408,9 +455,7 @@ int main(int argc, const char *argv[]) {
             @"os": NSProcessInfo.processInfo.operatingSystemVersionString,
             @"checks": @(checks), @"failures": @(failures), @"passed": @(failures == 0),
             @"failureMessages": failureMessages, @"samples": samples,
-            @"centeredFrameChecks": @(centeredFrameChecks),
-            @"maximumVerticalErrorPoints": @(maximumVerticalErrorPoints),
-            @"worstVerticalCase": worstVerticalCase ?: @"none",
+            @"cycles": cycleResults,
             @"scope": @"Actual bundle drawRect into explicit bitmap; not WindowServer/ScreenSaverEngine composition."
         };
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:&error];

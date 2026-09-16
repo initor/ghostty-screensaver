@@ -39,8 +39,9 @@ static os_log_t sPOILog;
 @property (nonatomic, assign) CGPoint cachedDrawOrigin;
 @property (nonatomic, assign) CGRect cachedBounds;
 
-// Scalar glyph geometry only; no Core Text frames or font caches are retained.
-@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSNumber *> *inkMidpoints;
+// One anchor for the whole animation preserves its authored motion.
+// Only a scalar is retained, not Core Text frames or font caches.
+@property (nonatomic, strong) NSNumber *animationInkMidpoint;
 
 @end
 
@@ -72,7 +73,6 @@ static os_log_t sPOILog;
         // returns instantly with the same immutable array.
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [GhosttyFrameLoader sharedFramesForBundle:thisBundle];
-        self.inkMidpoints = [NSMutableDictionary dictionary];
 
         [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
@@ -184,29 +184,36 @@ static os_log_t sPOILog;
             CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL);
 
         usedSize = CGSizeMake(trueWidth, suggested.height);
-        NSNumber *index = @(self.currentFrameIndex);
-        NSNumber *midpoint = self.inkMidpoints[index];
+        NSNumber *midpoint = self.animationInkMidpoint;
         if (!midpoint) {
             CGPathRef measurePath = CGPathCreateWithRect(
                 CGRectMake(0, 0, usedSize.width, usedSize.height), NULL);
-            CTFrameRef measureFrame = CTFramesetterCreateFrame(
-                framesetter, textRange, measurePath, NULL);
-            CFArrayRef lines = CTFrameGetLines(measureFrame);
             CGRect ink = CGRectNull;
-            for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
-                CTLineRef line = (CTLineRef)CFArrayGetValueAtIndex(lines, i);
-                CGRect glyphs = CTLineGetImageBounds(line, NULL);
-                if (!CGRectIsNull(glyphs) && !CGRectIsEmpty(glyphs)) {
-                    CGPoint baseline;
-                    CTFrameGetLineOrigins(measureFrame, CFRangeMake(i, 1), &baseline);
-                    ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
+            // Every bundled frame has the same 100-column, 41-row layout.
+            // Union the entire loop before drawing so the anchor never shifts
+            // when a character appears, disappears, or moves between frames.
+            for (NSAttributedString *frame in self.frames) {
+                @autoreleasepool {
+                    CTFramesetterRef measureSetter = CTFramesetterCreateWithAttributedString(
+                        (__bridge CFAttributedStringRef)frame);
+                    CTFrameRef measureFrame = CTFramesetterCreateFrame(
+                        measureSetter, CFRangeMake(0, frame.length), measurePath, NULL);
+                    CFArrayRef lines = CTFrameGetLines(measureFrame);
+                    for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
+                        CTLineRef line = (CTLineRef)CFArrayGetValueAtIndex(lines, i);
+                        CGRect glyphs = CTLineGetImageBounds(line, NULL);
+                        if (!CGRectIsNull(glyphs) && !CGRectIsEmpty(glyphs)) {
+                            CGPoint baseline;
+                            CTFrameGetLineOrigins(measureFrame, CFRangeMake(i, 1), &baseline);
+                            ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
+                        }
+                    }
+                    CFRelease(measureFrame);
+                    CFRelease(measureSetter);
                 }
             }
-            // Empty rows and typographic leading do not belong to the visible
-            // artwork. Each frame's ink midpoint includes actual glyph metrics.
             midpoint = @(CGRectIsNull(ink) ? usedSize.height / 2.0 : CGRectGetMidY(ink));
-            self.inkMidpoints[index] = midpoint;
-            CFRelease(measureFrame);
+            self.animationInkMidpoint = midpoint;
             CGPathRelease(measurePath);
         }
         origin = CGPointMake(NSMidX(self.bounds) - usedSize.width / 2.0,
