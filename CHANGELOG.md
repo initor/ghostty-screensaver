@@ -7,8 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
-- Center each frame vertically using its visible glyph bounds rather than padded text height.
-- Verify visible top/bottom margins directly from rendered pixels, independent of Core Text layout measurements.
+- Use one vertically centered visible-ink envelope for the whole animation, preserving authored motion without per-frame recentering jumps.
+- Verify the complete loop's visible top/bottom margins from rendered pixels and assert a fixed origin across all frames and wraparound.
 
 ## [1.7.1] — 2026-09-15
 
