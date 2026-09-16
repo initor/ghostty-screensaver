@@ -14,18 +14,10 @@
 
 <br>
 
-<!-- Theme-aware hero per github.com/orgs/community/discussions/16925:
-     dark mode shows the animated GIF; light mode shows a negated still
-     so the artwork sits on a light background instead of pasting a
-     stark black box onto white pages. -->
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/demo_1440.gif">
-  <source media="(prefers-color-scheme: light)" srcset="assets/demo_light.png">
-  <img
-    alt="Ghostty screensaver — 235-frame ASCII ghost animation, white glyphs on black with periodic blue accents, looping on an idle macOS desktop."
-    src="assets/demo_1440.gif"
-    width="900">
-</picture>
+<img
+  alt="Ghostty screensaver — 235-frame ASCII ghost animation, white glyphs on black with periodic blue accents, looping on an idle macOS desktop."
+  src="assets/demo_1440.gif"
+  width="900">
 
 </div>
 
