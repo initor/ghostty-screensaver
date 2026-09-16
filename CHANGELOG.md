@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Center each frame vertically using its visible glyph bounds rather than padded text height.
+- Verify visible top/bottom margins directly from rendered pixels, independent of Core Text layout measurements.
+
 ## [1.7.1] — 2026-09-15
 
 ### Fixed

@@ -10,6 +10,13 @@ static NSUInteger failures, checks;
 static NSMutableArray<NSString *> *failureMessages;
 static NSString *outputDirectory;
 static NSBundle *saverBundle;
+static CGFloat maximumVerticalErrorPoints;
+static NSString *worstVerticalCase;
+static NSUInteger centeredFrameChecks;
+
+static CGFloat VerticalError(NSDictionary *ink, NSBitmapImageRep *rep, CGFloat scale) {
+    return fabs(([ink[@"top"] doubleValue] + [ink[@"bottom"] doubleValue] + 1 - rep.pixelsHigh) / (2 * scale));
+}
 
 static void Check(BOOL ok, NSString *message) {
     checks++;
@@ -136,10 +143,12 @@ static void SavePNG(NSBitmapImageRep *rep, NSString *name) {
 
 // Measure every real line, including its trailing spaces. This oracle does not
 // reuse the saver's first-line all-space probe or cached size/origin calculation.
-static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, NSSize *sizeOut,
-                            NSPoint *originOut, NSString *label) CF_RETURNS_RETAINED;
-static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, NSSize *sizeOut,
-                            NSPoint *originOut, NSString *label) {
+static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat scale,
+                            NSSize *sizeOut, NSPoint *originOut, NSSize *inkSizeOut,
+                            NSString *label) CF_RETURNS_RETAINED;
+static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat scale,
+                            NSSize *sizeOut, NSPoint *originOut, NSSize *inkSizeOut,
+                            NSString *label) {
     NSArray<NSString *> *lines = [text.string componentsSeparatedByString:@"\n"];
     NSUInteger lineCount = lines.count;
     if ([lines.lastObject length] == 0) lineCount--;
@@ -170,6 +179,41 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, NSSize *siz
           [label stringByAppendingString:@" reference must fit every nonblank character"]);
     Check(CFArrayGetCount(CTFrameGetLines(frame)) == (CFIndex)lineCount,
           [label stringByAppendingString:@" reference must retain all rows without wrapping"]);
+    // Rasterize all rows with generous margins. The placement oracle measures
+    // pixels only, never CTLineGetImageBounds or the saver's cached origin.
+    NSSize canvas = NSMakeSize(ceil(size.width) + 128, ceil(size.height) + 128);
+    ScreenSaverView *probe = [[ScreenSaverView alloc]
+        initWithFrame:NSMakeRect(0, 0, canvas.width, canvas.height) isPreview:NO];
+    CGPathRelease(path); CFRelease(frame);
+    NSPoint probeOrigin = NSMakePoint(64, 64);
+    path = CGPathCreateWithRect(NSMakeRect(probeOrigin.x, probeOrigin.y, size.width, size.height), NULL);
+    frame = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), path, NULL);
+    NSBitmapImageRep *raster = Render(probe, scale, frame);
+    NSDictionary *ink = Ink(raster);
+    Check([ink[@"pixels"] unsignedIntegerValue] > 0, [label stringByAppendingString:@" generous reference has ink"]);
+    Check([ink[@"left"] integerValue] > 0 && [ink[@"right"] integerValue] < raster.pixelsWide - 1 &&
+          [ink[@"top"] integerValue] > 0 && [ink[@"bottom"] integerValue] < raster.pixelsHigh - 1,
+          [label stringByAppendingString:@" generous reference has unclipped ink"]);
+    CGFloat centerPixel = ([ink[@"top"] doubleValue] + [ink[@"bottom"] doubleValue] + 1) / 2;
+    // Calibrate raw bitmap row orientation rather than assuming top-down storage.
+    static CGFloat rowDirection;
+    if (!rowDirection) {
+        CGPathRef shiftedPath = CGPathCreateWithRect(NSMakeRect(64, 65, size.width, size.height), NULL);
+        CTFrameRef shifted = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), shiftedPath, NULL);
+        NSDictionary *shiftInk = Ink(Render(probe, scale, shifted));
+        CGFloat shiftCenter = ([shiftInk[@"top"] doubleValue] + [shiftInk[@"bottom"] doubleValue] + 1) / 2;
+        rowDirection = (shiftCenter - centerPixel) / scale;
+        Check(fabs(fabs(rowDirection) - 1) < 0.001, @"bitmap row orientation calibrates to one point");
+        CFRelease(shifted); CGPathRelease(shiftedPath);
+    }
+    CGFloat correction = (raster.pixelsHigh / 2.0 - centerPixel) / (rowDirection * scale);
+    CGFloat localInkCenter = canvas.height / 2 - (probeOrigin.y + correction);
+    origin.y = NSMidY(bounds) - localInkCenter;
+    *inkSizeOut = NSMakeSize(([ink[@"right"] doubleValue] - [ink[@"left"] doubleValue] + 1) / scale,
+                            ([ink[@"bottom"] doubleValue] - [ink[@"top"] doubleValue] + 1) / scale);
+    CGPathRelease(path); CFRelease(frame);
+    path = CGPathCreateWithRect(NSMakeRect(origin.x, origin.y, size.width, size.height), NULL);
+    frame = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), path, NULL);
     *sizeOut = size; *originOut = origin;
     CGPathRelease(path); CFRelease(fs);
     return frame;
@@ -183,8 +227,8 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     NSArray *frames = [view valueForKey:@"frames"];
     Check([[view valueForKey:@"currentFrameIndex"] unsignedIntegerValue] == index,
           [label stringByAppendingString:@" animation index"]);
-    NSSize expectedSize; NSPoint expectedOrigin;
-    CTFrameRef reference = Reference(frames[index], view.bounds, &expectedSize, &expectedOrigin, label);
+    NSSize expectedSize, completeInkSize; NSPoint expectedOrigin;
+    CTFrameRef reference = Reference(frames[index], view.bounds, scale, &expectedSize, &expectedOrigin, &completeInkSize, label);
     NSBitmapImageRep *actual = Render(view, scale, NULL);
     NSBitmapImageRep *expected = Render(view, scale, reference);
     CFRelease(reference);
@@ -192,36 +236,73 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     NSPoint actualOrigin = [[view valueForKey:@"cachedDrawOrigin"] pointValue];
     Check(fabs(actualSize.width - expectedSize.width) < 0.01 &&
           fabs(actualSize.height - expectedSize.height) < 0.01 &&
-          fabs(actualOrigin.x - expectedOrigin.x) < 0.01 &&
-          fabs(actualOrigin.y - expectedOrigin.y) < 0.01,
+          fabs(actualOrigin.x - expectedOrigin.x) < 0.01,
           [NSString stringWithFormat:@"%@ canvas expected %@ at %@, got %@ at %@", label,
               NSStringFromSize(expectedSize), NSStringFromPoint(expectedOrigin),
               NSStringFromSize(actualSize), NSStringFromPoint(actualOrigin)]);
     NSDictionary *ink = Ink(actual), *referenceInk = Ink(expected);
     Check([ink[@"pixels"] unsignedIntegerValue] > 0 && [referenceInk[@"pixels"] unsignedIntegerValue] > 0,
           [label stringByAppendingString:@" nonblank actual and reference pixels"]);
+    BOOL fullScreen = ![name isEqualToString:@"preview-clipped"];
+    CGFloat verticalError = VerticalError(ink, actual, scale);
+    BOOL newWorst = NO;
+    if (fullScreen) {
+        centeredFrameChecks++;
+        if (!worstVerticalCase || verticalError > maximumVerticalErrorPoints) {
+            maximumVerticalErrorPoints = verticalError;
+            worstVerticalCase = label;
+            newWorst = YES;
+        }
+        Check(verticalError <= 1.0, [NSString stringWithFormat:@"%@ visible vertical center error %.3f pt exceeds 1 pt", label, verticalError]);
+        Check(VerticalError(referenceInk, expected, scale) <= 1.0,
+              [label stringByAppendingString:@" independent raster-centered reference"]);
+        CGFloat inkWidth = ([ink[@"right"] doubleValue] - [ink[@"left"] doubleValue] + 1) / scale;
+        CGFloat inkHeight = ([ink[@"bottom"] doubleValue] - [ink[@"top"] doubleValue] + 1) / scale;
+        Check(fabs(inkWidth - completeInkSize.width) <= 2 / scale &&
+              fabs(inkHeight - completeInkSize.height) <= 2 / scale,
+              [label stringByAppendingString:@" full-screen retains complete unclipped artwork dimensions"]);
+        Check([ink[@"left"] integerValue] > 0 && [ink[@"right"] integerValue] < actual.pixelsWide - 1 &&
+              [ink[@"top"] integerValue] > 0 && [ink[@"bottom"] integerValue] < actual.pixelsHigh - 1,
+              [label stringByAppendingString:@" full-screen artwork has clear edges"]);
+    }
+    // Content oracle keeps the independently measured X, but follows the actual
+    // Y translation so fractional raster phase cannot mask a missing glyph/row.
+    // The independent centering assertion above does not use actualOrigin.
+    CTFramesetterRef fs = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)frames[index]);
+    CGPathRef alignedPath = CGPathCreateWithRect(NSMakeRect(expectedOrigin.x, actualOrigin.y,
+        expectedSize.width, expectedSize.height), NULL);
+    CTFrameRef alignedFrame = CTFramesetterCreateFrame(fs, CFRangeMake(0, [frames[index] length]), alignedPath, NULL);
+    NSBitmapImageRep *aligned = Render(view, scale, alignedFrame);
+    CFRelease(alignedFrame); CGPathRelease(alignedPath); CFRelease(fs);
+    NSDictionary *alignedInk = Ink(aligned);
     BOOL boxMatches = YES;
     for (NSString *key in @[@"left", @"right", @"top", @"bottom"]) {
-        if (labs([ink[key] integerValue] - [referenceInk[key] integerValue]) > 1) boxMatches = NO;
+        if (labs([ink[key] integerValue] - [alignedInk[key] integerValue]) > 1) boxMatches = NO;
     }
-    Check(boxMatches, [NSString stringWithFormat:@"%@ ink bounds expected %@, got %@", label, referenceInk, ink]);
-    NSUInteger different = PixelDifference(actual, expected);
+    Check(boxMatches, [NSString stringWithFormat:@"%@ aligned content bounds expected %@, got %@", label, alignedInk, ink]);
+    NSUInteger different = PixelDifference(actual, aligned);
     // Normalize by reference ink, not the mostly-black screen area. A missing row
     // or a 77-point translation must not disappear into a full-screen tolerance.
-    NSUInteger allowed = MAX((NSUInteger)4, [referenceInk[@"pixels"] unsignedIntegerValue] / 1000);
+    NSUInteger allowed = MAX((NSUInteger)4, [alignedInk[@"pixels"] unsignedIntegerValue] / 1000);
     Check(different <= allowed,
           [NSString stringWithFormat:@"%@ full-frame pixel mismatch %lu (allowed %lu)", label,
               (unsigned long)different, (unsigned long)allowed]);
     // Keep PNG evidence bounded even when an old release fails every frame.
-    // Every case still has structured failure details in results.json.
+    // Every case has measured pixels in results.json; worst evidence is replaced.
+    if (newWorst) {
+        SavePNG(actual, @"worst-vertical-actual.png");
+        SavePNG(expected, @"worst-vertical-reference.png");
+    }
     if (save) {
         NSString *stem = [NSString stringWithFormat:@"%@-%03lu-%.0fx", name, (unsigned long)index, scale];
         SavePNG(actual, [stem stringByAppendingString:@"-actual.png"]);
         SavePNG(expected, [stem stringByAppendingString:@"-reference.png"]);
-        [samples addObject:@{@"case": label, @"ink": ink, @"referenceInk": referenceInk,
-            @"differentPixels": @(different), @"canvasSize": NSStringFromSize(actualSize),
-            @"canvasOrigin": NSStringFromPoint(actualOrigin), @"passed": @(failures == before)}];
     }
+    [samples addObject:@{@"case": label, @"ink": ink, @"referenceInk": referenceInk,
+        @"verticalCenterErrorPoints": @(verticalError), @"centeringRequired": @(fullScreen),
+        @"completeInkSize": NSStringFromSize(completeInkSize),
+        @"differentPixels": @(different), @"canvasSize": NSStringFromSize(actualSize),
+        @"canvasOrigin": NSStringFromPoint(actualOrigin), @"passed": @(failures == before)}];
 }
 
 int main(int argc, const char *argv[]) {
@@ -296,7 +377,7 @@ int main(int argc, const char *argv[]) {
             if ([[view valueForKey:@"frames"] count] == 235) {
                 for (NSUInteger i = 0; i < 235; i++) {
                     @autoreleasepool {
-                        if (i == 0 || i == 117 || i == 234) TestFrame(view, i, 2, @"retina", YES, samples);
+                        TestFrame(view, i, 2, @"retina", i == 0 || i == 117 || i == 234, samples);
                         [view animateOneFrame];
                     }
                 }
@@ -327,6 +408,9 @@ int main(int argc, const char *argv[]) {
             @"os": NSProcessInfo.processInfo.operatingSystemVersionString,
             @"checks": @(checks), @"failures": @(failures), @"passed": @(failures == 0),
             @"failureMessages": failureMessages, @"samples": samples,
+            @"centeredFrameChecks": @(centeredFrameChecks),
+            @"maximumVerticalErrorPoints": @(maximumVerticalErrorPoints),
+            @"worstVerticalCase": worstVerticalCase ?: @"none",
             @"scope": @"Actual bundle drawRect into explicit bitmap; not WindowServer/ScreenSaverEngine composition."
         };
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:&error];

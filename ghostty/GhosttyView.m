@@ -39,6 +39,9 @@ static os_log_t sPOILog;
 @property (nonatomic, assign) CGPoint cachedDrawOrigin;
 @property (nonatomic, assign) CGRect cachedBounds;
 
+// Scalar glyph geometry only; no Core Text frames or font caches are retained.
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, NSNumber *> *inkMidpoints;
+
 @end
 
 @implementation GhosttyView
@@ -69,6 +72,7 @@ static os_log_t sPOILog;
         // returns instantly with the same immutable array.
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [GhosttyFrameLoader sharedFramesForBundle:thisBundle];
+        self.inkMidpoints = [NSMutableDictionary dictionary];
 
         [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
@@ -157,17 +161,8 @@ static os_log_t sPOILog;
         usedSize = self.cachedDrawSize;
         origin = self.cachedDrawOrigin;
     } else {
-        // CTFramesetterSuggestFrameSizeWithConstraints silently strips
-        // trailing whitespace from each line's typographic width. The
-        // 235 frames are 100-column ASCII art with symmetric leading
-        // and trailing space padding (see FRAMES.md), so the trailing
-        // cols get dropped from the measurement while the leading cols
-        // still render — centering on that narrower box pushes the
-        // visible glyphs ~77 pt right of midX.
-        //
-        // Fix: measure a single canonical full-width line at the same
-        // font. CTLineGetTypographicBounds includes trailing whitespace,
-        // so this returns the true rendered width of every frame line.
+        // Preserve the full 100-column canvas horizontally. The framesetter
+        // omits trailing whitespace, whereas CTLine typographic width includes it.
         NSString *raw = attr.string;
         NSRange firstNL = [raw rangeOfString:@"\n"];
         NSUInteger cols = (firstNL.location != NSNotFound)
@@ -189,8 +184,33 @@ static os_log_t sPOILog;
             CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL);
 
         usedSize = CGSizeMake(trueWidth, suggested.height);
-        origin = CGPointMake(NSMidX(self.bounds) - usedSize.width  / 2.0,
-                             NSMidY(self.bounds) - usedSize.height / 2.0);
+        NSNumber *index = @(self.currentFrameIndex);
+        NSNumber *midpoint = self.inkMidpoints[index];
+        if (!midpoint) {
+            CGPathRef measurePath = CGPathCreateWithRect(
+                CGRectMake(0, 0, usedSize.width, usedSize.height), NULL);
+            CTFrameRef measureFrame = CTFramesetterCreateFrame(
+                framesetter, textRange, measurePath, NULL);
+            CFArrayRef lines = CTFrameGetLines(measureFrame);
+            CGRect ink = CGRectNull;
+            for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
+                CTLineRef line = (CTLineRef)CFArrayGetValueAtIndex(lines, i);
+                CGRect glyphs = CTLineGetImageBounds(line, NULL);
+                if (!CGRectIsNull(glyphs) && !CGRectIsEmpty(glyphs)) {
+                    CGPoint baseline;
+                    CTFrameGetLineOrigins(measureFrame, CFRangeMake(i, 1), &baseline);
+                    ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
+                }
+            }
+            // Empty rows and typographic leading do not belong to the visible
+            // artwork. Each frame's ink midpoint includes actual glyph metrics.
+            midpoint = @(CGRectIsNull(ink) ? usedSize.height / 2.0 : CGRectGetMidY(ink));
+            self.inkMidpoints[index] = midpoint;
+            CFRelease(measureFrame);
+            CGPathRelease(measurePath);
+        }
+        origin = CGPointMake(NSMidX(self.bounds) - usedSize.width / 2.0,
+                             NSMidY(self.bounds) - midpoint.doubleValue);
         self.cachedDrawSize    = usedSize;
         self.cachedDrawOrigin  = origin;
         self.cachedOriginIndex = self.currentFrameIndex;
@@ -214,7 +234,10 @@ static os_log_t sPOILog;
     // glyph/font caches grew unboundedly across setAttributedString: swaps
     // (~1.6 KB / frame, no plateau on macOS 26 per B8 measurement).
     CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
+    CGContextSaveGState(ctx);
+    CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
     CTFrameDraw(ctFrame, ctx);
+    CGContextRestoreGState(ctx);
 
     CFRelease(ctFrame);
     CFRelease(framesetter);
