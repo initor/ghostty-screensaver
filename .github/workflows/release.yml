@@ -214,7 +214,7 @@ jobs:
 
       - name: Upload rendering evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-rendering-${{ needs.prepare.outputs.tag }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/render-verification
