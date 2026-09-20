@@ -23,9 +23,9 @@
 //    3. Drag the ghostty/static/animation_frames/ folder onto the
 //       ghosttyTest target's "Copy Bundle Resources" build phase
 //       (or repoint GHOSTTY_FRAMES_BUNDLE_PATH at a built saver).
-//    4. Drag GhosttyFrameLoader.m onto the ghosttyTest target's "Compile
-//       Sources" build phase. (Logic-only test bundle, no TEST_HOST.)
-//       Nothing in CI compiles this file.
+//    4. Drag GhosttyFrameLoader.m and GhosttyColorScheme.m onto the
+//       ghosttyTest target's "Compile Sources" build phase. (Logic-only
+//       test bundle, no TEST_HOST.) Nothing in CI compiles this file.
 //    5. Edit the ghostty scheme → Test → add ghosttyTest.
 //
 //  How to run:
@@ -48,6 +48,7 @@
 #import <mach/task_info.h>
 
 #import "GhosttyFrameLoader.h"
+#import "GhosttyColorScheme.h"
 #import <CoreText/CoreText.h>
 
 #pragma mark - Constants
@@ -108,7 +109,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     // Cache one load for tests that don't measure the load itself, so we don't pay
     // the load cost in every test method's setUp.
     if (!self.cachedFrames) {
-        self.cachedFrames = [self.loader loadFramesFromBundle:self.framesBundle];
+        self.cachedFrames = [self.loader loadFramesFromBundle:self.framesBundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
     }
 }
 
@@ -141,7 +142,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
 
 /// At least some frames contain an accent-attributed run.
 /// (Colors are CGColor under kCTForegroundColorAttributeName since 1.8.0;
-/// the blue is sRGB 0,0,230, defined in GhosttyFrameLoader.m.)
+/// the classic accent is sRGB 0,0,230, defined in GhosttyColorScheme.m.)
 - (void)testAtLeastOneFrameContainsBlueRun {
     NSArray<NSAttributedString *> *frames = self.cachedFrames;
     NSUInteger framesWithBlueRun = 0;
@@ -186,7 +187,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
                        block:^{
         @autoreleasepool {
             GhosttyFrameLoader *fresh = [[GhosttyFrameLoader alloc] init];
-            (void)[fresh loadFramesFromBundle:bundle];
+            (void)[fresh loadFramesFromBundle:bundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
         }
     }];
 }
@@ -197,7 +198,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     // Prime the file cache.
     @autoreleasepool {
         GhosttyFrameLoader *primer = [[GhosttyFrameLoader alloc] init];
-        (void)[primer loadFramesFromBundle:self.framesBundle];
+        (void)[primer loadFramesFromBundle:self.framesBundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
     }
 
     XCTMeasureOptions *options = [XCTMeasureOptions defaultOptions];
@@ -209,7 +210,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
                        block:^{
         @autoreleasepool {
             GhosttyFrameLoader *fresh = [[GhosttyFrameLoader alloc] init];
-            (void)[fresh loadFramesFromBundle:bundle];
+            (void)[fresh loadFramesFromBundle:bundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
         }
     }];
 }
@@ -325,7 +326,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
 /// Captures RSS before and after a full load. Reports the delta. This is a single-instance
 /// measurement; SYNTHESIS H4 multi-display amplification means real-world resident usage is
 /// 2-3× this number on multi-monitor setups + System Settings preview (now mitigated by
-/// +sharedFramesForBundle:).
+/// +framesForScheme:bundle:).
 - (void)testMemoryFootprintAfterLoad {
     self.cachedFrames = nil;
     @autoreleasepool { /* Drain any pending autoreleased junk. */ }
@@ -334,7 +335,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
 
     @autoreleasepool {
         GhosttyFrameLoader *fresh = [[GhosttyFrameLoader alloc] init];
-        NSArray<NSAttributedString *> *frames = [fresh loadFramesFromBundle:self.framesBundle];
+        NSArray<NSAttributedString *> *frames = [fresh loadFramesFromBundle:self.framesBundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
         XCTAssertEqual(frames.count, kExpectedFrameCount,
                        @"Memory test needs the full corpus to be representative.");
         self.cachedFrames = frames;
@@ -488,7 +489,7 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     XCTAssertNotNil(fauxBundle, @"Failed to construct faux bundle at %@", tempDir);
 
     GhosttyFrameLoader *fresh = [[GhosttyFrameLoader alloc] init];
-    NSArray<NSAttributedString *> *frames = [fresh loadFramesFromBundle:fauxBundle];
+    NSArray<NSAttributedString *> *frames = [fresh loadFramesFromBundle:fauxBundle scheme:[GhosttyColorScheme schemeWithIdentifier:nil]];
 
     [fm removeItemAtPath:tempDir error:NULL];
 
