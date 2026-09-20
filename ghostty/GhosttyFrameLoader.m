@@ -8,16 +8,21 @@
 
 #import "GhosttyFrameLoader.h"
 #import <AppKit/AppKit.h>
+#import <CoreText/CoreText.h>
 #import <os/log.h>
 #import <os/signpost.h>
 
 // File-level statics, populated once in +initialize. The hot path
 // (attributedFrameFromRawHTML:) reads them branch-free, and every
 // NSAttributedString allocated in this file shares the same attribute
-// dictionary references — across 235 frames, this saves the original
-// 470 dict allocations + 235 regex compiles in a cold init.
-static NSColor *sBlueColor;
-static NSColor *sWhiteColor;
+// dictionary references.
+//
+// Colors are CGColor under the Core Text key, not NSColor under the AppKit
+// key. CTFrameDraw uses a CGColor as it is; an NSColor is converted through
+// ColorSync on every run of every tick, which was 39 percent of CTFrameDraw
+// time when measured.
+static CGColorRef sBlueColor;
+static CGColorRef sWhiteColor;
 static NSFont  *sMonospacedFont;
 static NSDictionary<NSAttributedStringKey, id> *sAttrsWhite;
 static NSDictionary<NSAttributedStringKey, id> *sAttrsBlue;
@@ -30,8 +35,16 @@ static os_log_t sLog;
 // without a special build.
 static os_log_t sPOILog;
 
+// Process-wide cache: the frames, plus geometry that depends on font and
+// corpus only. Main thread only (see header).
+static NSArray<NSAttributedString *> *sCachedFrames;
+static CGSize sCanvasSize;
+static CGFloat sInkMidpoint;
+static BOOL sGeometryReady;
+
 @interface GhosttyFrameLoader ()
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw;
++ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames;
 @end
 
 @implementation GhosttyFrameLoader
@@ -44,15 +57,8 @@ static os_log_t sPOILog;
         return;
     }
 
-    sBlueColor = [NSColor colorWithSRGBRed:0.0
-                                     green:0.0
-                                      blue:(230.0 / 255.0)
-                                     alpha:1.0];
-
-    sWhiteColor = [NSColor colorWithSRGBRed:(215.0 / 255.0)
-                                      green:(215.0 / 255.0)
-                                       blue:(215.0 / 255.0)
-                                      alpha:1.0];
+    sBlueColor = CGColorCreateSRGB(0.0, 0.0, 230.0 / 255.0, 1.0);
+    sWhiteColor = CGColorCreateSRGB(215.0 / 255.0, 215.0 / 255.0, 215.0 / 255.0, 1.0);
 
     // Defensive font fallback. -fontWithName:size: can return nil (Font
     // Book disable, MDM lockdown, future macOS removal). With nil, the
@@ -65,13 +71,14 @@ static os_log_t sPOILog;
                    ?: [NSFont systemFontOfSize:16.0];
     NSAssert(sMonospacedFont != nil, @"No usable monospaced font available");
 
+    // The font key is shared with Core Text (kCTFontAttributeName is the
+    // same string), so one dictionary serves both worlds.
     sAttrsWhite = @{
         NSFontAttributeName: sMonospacedFont,
-        NSForegroundColorAttributeName: sWhiteColor
+        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)sWhiteColor,
     };
     sAttrsBlue = @{
-        NSFontAttributeName: sMonospacedFont,
-        NSForegroundColorAttributeName: sBlueColor
+        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)sBlueColor,
     };
 
     // NSRegularExpressionDotMatchesLineSeparators lets `.*?` cross line
@@ -111,7 +118,7 @@ static os_log_t sPOILog;
     // independently and ~2× faster than localizedStandardCompare:.
     paths = [paths sortedArrayUsingSelector:@selector(compare:)];
 
-    NSMutableArray<NSAttributedString *> *loadedFrames = [NSMutableArray array];
+    NSMutableArray<NSAttributedString *> *loadedFrames = [NSMutableArray arrayWithCapacity:paths.count];
     NSUInteger skippedNonFrame = 0;
     NSUInteger skippedReadError = 0;
 
@@ -130,18 +137,18 @@ static os_log_t sPOILog;
             NSString *rawContent = [NSString stringWithContentsOfFile:path
                                                              encoding:NSUTF8StringEncoding
                                                                 error:&readError];
-            // Fail-open: a corrupt single frame should not blank the
-            // whole screensaver. Log and continue.
-            if (!rawContent) {
+            // Fail-open: a corrupt or empty single frame should not blank the
+            // whole screensaver. Log and continue. An empty frame would also
+            // break the geometry pass, which reads attributes at index 0.
+            if (rawContent.length == 0) {
                 os_log_error(sLog, "Failed to read frame %{public}@ (%{public}@)",
                              basename,
-                             readError.localizedDescription ?: @"unknown");
+                             rawContent ? @"empty" : (readError.localizedDescription ?: @"unknown"));
                 skippedReadError++;
                 continue;
             }
 
-            NSAttributedString *frame = [self attributedFrameFromRawHTML:rawContent];
-            [loadedFrames addObject:frame];
+            [loadedFrames addObject:[self attributedFrameFromRawHTML:rawContent]];
         }
     }
 
@@ -165,39 +172,106 @@ static os_log_t sPOILog;
 
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
 {
-    NSMutableAttributedString *parsed = [[NSMutableAttributedString alloc] init];
-    NSUInteger lastLoc = 0;
+    // Two passes: strip the tags into one plain string while noting where
+    // each blue run lands, then color the runs in place. One attributed
+    // string plus ~160 addAttributes: calls is about 3× cheaper than
+    // appending ~160 attributed pieces.
     NSArray<NSTextCheckingResult *> *matches =
         [sSpanRegex matchesInString:raw options:0 range:NSMakeRange(0, raw.length)];
+
+    NSMutableString *plain = [NSMutableString stringWithCapacity:raw.length];
+    NSMutableData *runs = [NSMutableData dataWithCapacity:matches.count * sizeof(NSRange)];
+    NSUInteger lastLoc = 0;
 
     for (NSTextCheckingResult *match in matches) {
         NSRange fullMatchRange = [match rangeAtIndex:0];
         NSRange innerRange     = [match rangeAtIndex:1];
 
-        // Append outside text (between the previous match and this one) as white.
         if (fullMatchRange.location > lastLoc) {
-            NSRange outsideRange = NSMakeRange(lastLoc, fullMatchRange.location - lastLoc);
-            NSString *outside = [raw substringWithRange:outsideRange];
-            [parsed appendAttributedString:[[NSAttributedString alloc] initWithString:outside
-                                                                           attributes:sAttrsWhite]];
+            [plain appendString:[raw substringWithRange:NSMakeRange(lastLoc, fullMatchRange.location - lastLoc)]];
         }
 
-        // Append the span-inner text as blue.
-        NSString *blue = [raw substringWithRange:innerRange];
-        [parsed appendAttributedString:[[NSAttributedString alloc] initWithString:blue
-                                                                       attributes:sAttrsBlue]];
+        NSRange run = NSMakeRange(plain.length, innerRange.length);
+        [plain appendString:[raw substringWithRange:innerRange]];
+        [runs appendBytes:&run length:sizeof(run)];
 
-        lastLoc = fullMatchRange.location + fullMatchRange.length;
+        lastLoc = NSMaxRange(fullMatchRange);
     }
 
     if (lastLoc < raw.length) {
-        NSRange trailingRange = NSMakeRange(lastLoc, raw.length - lastLoc);
-        NSString *trailing = [raw substringWithRange:trailingRange];
-        [parsed appendAttributedString:[[NSAttributedString alloc] initWithString:trailing
-                                                                       attributes:sAttrsWhite]];
+        [plain appendString:[raw substringFromIndex:lastLoc]];
     }
 
-    return [parsed copy];
+    NSMutableAttributedString *frame = [[NSMutableAttributedString alloc] initWithString:plain
+                                                                              attributes:sAttrsWhite];
+    const NSRange *run = runs.bytes;
+    NSUInteger runCount = runs.length / sizeof(NSRange);
+    for (NSUInteger i = 0; i < runCount; i++) {
+        [frame addAttributes:sAttrsBlue range:run[i]];
+    }
+
+    return [frame copy];
+}
+
++ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames
+{
+    NSAttributedString *first = frames.firstObject;
+
+    // Preserve the full 100-column canvas horizontally. The framesetter
+    // omits trailing whitespace, whereas CTLine typographic width includes
+    // it. Every bundled frame has the same 100-column, 41-row layout, so
+    // the first frame stands for all of them.
+    NSString *raw = first.string;
+    NSRange firstNL = [raw rangeOfString:@"\n"];
+    NSUInteger cols = (firstNL.location != NSNotFound) ? firstNL.location : raw.length;
+    NSDictionary *probeAttrs = [first attributesAtIndex:0 effectiveRange:NULL];
+    NSString *fullLine = [@"" stringByPaddingToLength:cols withString:@" " startingAtIndex:0];
+    NSAttributedString *probe = [[NSAttributedString alloc] initWithString:fullLine attributes:probeAttrs];
+    CTLineRef probeLine = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)probe);
+    CGFloat trueWidth = CTLineGetTypographicBounds(probeLine, NULL, NULL, NULL);
+    CFRelease(probeLine);
+
+    CTFramesetterRef firstSetter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)first);
+    CGSize suggested = CTFramesetterSuggestFrameSizeWithConstraints(
+        firstSetter, CFRangeMake(0, (CFIndex)first.length), NULL,
+        CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL);
+    CFRelease(firstSetter);
+
+    CGSize canvas = CGSizeMake(trueWidth, suggested.height);
+
+    // Union the visible ink of the entire loop so the anchor never shifts
+    // when a character appears, disappears, or moves between frames. This
+    // is the 80 ms pass that used to run once per view; now once per process.
+    CGPathRef measurePath = CGPathCreateWithRect(CGRectMake(0, 0, canvas.width, canvas.height), NULL);
+    CGRect ink = CGRectNull;
+    for (NSAttributedString *frame in frames) {
+        @autoreleasepool {
+            CTFramesetterRef measureSetter = CTFramesetterCreateWithAttributedString(
+                (__bridge CFAttributedStringRef)frame);
+            CTFrameRef measureFrame = CTFramesetterCreateFrame(
+                measureSetter, CFRangeMake(0, (CFIndex)frame.length), measurePath, NULL);
+            CFArrayRef lines = CTFrameGetLines(measureFrame);
+            for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
+                CTLineRef line = (CTLineRef)CFArrayGetValueAtIndex(lines, i);
+                CGRect glyphs = CTLineGetImageBounds(line, NULL);
+                if (!CGRectIsNull(glyphs) && !CGRectIsEmpty(glyphs)) {
+                    CGPoint baseline;
+                    CTFrameGetLineOrigins(measureFrame, CFRangeMake(i, 1), &baseline);
+                    ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
+                }
+            }
+            CFRelease(measureFrame);
+            CFRelease(measureSetter);
+        }
+    }
+    CGPathRelease(measurePath);
+
+    sCanvasSize = canvas;
+    sInkMidpoint = CGRectIsNull(ink) ? canvas.height / 2.0 : CGRectGetMidY(ink);
+    sGeometryReady = YES;
+
+    os_log_info(sLog, "Canvas %.2fx%.2f pt, ink midpoint %.2f pt",
+                canvas.width, canvas.height, sInkMidpoint);
 }
 
 #pragma mark - Process-Singleton Cache
@@ -205,14 +279,33 @@ static os_log_t sPOILog;
 + (NSArray<NSAttributedString *> *)sharedFramesForBundle:(NSBundle *)bundle
 {
     NSParameterAssert(bundle != nil);
+    NSAssert(NSThread.isMainThread, @"GhosttyFrameLoader is main-thread only");
 
-    static dispatch_once_t once;
-    static NSArray<NSAttributedString *> *cachedFrames = nil;
-    dispatch_once(&once, ^{
-        GhosttyFrameLoader *loader = [[GhosttyFrameLoader alloc] init];
-        cachedFrames = [loader loadFramesFromBundle:bundle];
-    });
-    return cachedFrames;
+    if (sCachedFrames.count > 0) {
+        return sCachedFrames;
+    }
+
+    NSArray<NSAttributedString *> *frames =
+        [[[GhosttyFrameLoader alloc] init] loadFramesFromBundle:bundle];
+    if (frames.count == 0) {
+        return frames;
+    }
+
+    sCachedFrames = frames;
+    if (!sGeometryReady) {
+        [self measureGeometryWithFrames:frames];
+    }
+    return frames;
+}
+
++ (CGSize)canvasSize
+{
+    return sCanvasSize;
+}
+
++ (CGFloat)inkMidpoint
+{
+    return sInkMidpoint;
 }
 
 @end
