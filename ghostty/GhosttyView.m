@@ -7,7 +7,9 @@
 //
 
 #import "GhosttyView.h"
+#import "GhosttyColorScheme.h"
 #import "GhosttyFrameLoader.h"
+#import "GhosttyOptionsSheet.h"
 #import <CoreText/CoreText.h>
 #import <os/log.h>
 #import <os/signpost.h>
@@ -16,6 +18,11 @@
 // discretionary workload, so M11 throttles to half-rate on battery + LPM.
 static const NSTimeInterval kGhosttyFrameIntervalNormal = 1.0 / 30.0;
 static const NSTimeInterval kGhosttyFrameIntervalLowPower = 1.0 / 15.0;
+// Fraction of the shorter bounds side kept clear when the canvas has to
+// shrink to fit (the System Settings preview). The ink spans 39 of the 41
+// rows, so an exact fit would put the halo on the edge. Applies only when
+// the canvas does not fit: a display that fits it keeps today's placement.
+static const CGFloat kGhosttyFitMargin = 0.08;
 static os_log_t sLog;
 // Always-on signpost log on the Points-of-Interest category. Auto-discovered
 // by Instruments and zero-cost when no client is attached.
@@ -23,21 +30,25 @@ static os_log_t sPOILog;
 
 @interface GhosttyView ()
 
-// Process-shared, immutable. Acquired in init via
-// +[GhosttyFrameLoader sharedFramesForBundle:]; multi-display and
-// preview-pane instances reuse the same array. tests/render_bundle.m reads
-// `frames` by name via valueForKey:.
+// The active scheme and its frames. Frames are process-shared and immutable;
+// multi-display and preview-pane instances on the same scheme reuse one
+// array. tests/render_bundle.m reads `frames` by name via valueForKey:.
+@property (nonatomic, strong) GhosttyColorScheme *scheme;
 @property (nonatomic, copy) NSArray<NSAttributedString *> *frames;
 
 // Cycled by animateOneFrame each tick.
 @property (nonatomic, assign) NSInteger currentFrameIndex;
 
 // Cached placement, keyed on bounds only. Every frame shares one canvas
-// size, so the origin depends on nothing else. The harness reads
-// cachedDrawSize and cachedDrawOrigin by name.
+// size, so the origin and fit depend on nothing else. The harness reads
+// cachedDrawSize, cachedDrawOrigin and cachedFit by name.
 @property (nonatomic, assign) CGSize cachedDrawSize;
 @property (nonatomic, assign) CGPoint cachedDrawOrigin;
+@property (nonatomic, assign) CGFloat cachedFit;
 @property (nonatomic, assign) CGRect cachedBounds;
+
+// The host does not retain the sheet; this reference keeps it alive.
+@property (nonatomic, strong) GhosttyOptionsSheet *optionsSheet;
 
 @end
 
@@ -58,34 +69,38 @@ static os_log_t sPOILog;
     self = [super initWithFrame:frame isPreview:isPreview];
     if (self) {
         // Layer-backed: WindowServer composites the backing store on the
-        // GPU and the layer's backgroundColor handles the per-tick black
-        // fill that the original NSRectFill used to do on the CPU.
+        // GPU and the layer's backgroundColor handles the per-tick fill
+        // that the original NSRectFill used to do on the CPU.
         self.wantsLayer = YES;
-        self.layer.backgroundColor = NSColor.blackColor.CGColor;
 
-        // Process-singleton frame array. The first GhosttyView pays the
-        // load and the whole-cycle geometry pass; every subsequent instance
-        // (multi-display, System Settings preview pane, view
-        // re-instantiation) returns instantly with the same immutable array.
-        NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
-        self.frames = [GhosttyFrameLoader sharedFramesForBundle:thisBundle];
+        // Read once. Both supported hosts create a fresh view per
+        // activation (macOS 26 reuses the process, macOS 27 does not), so
+        // init is where the stored value is fresh. The Options sheet is the
+        // only other writer and it broadcasts its changes.
+        [self applyScheme:[GhosttyColorScheme storedScheme]];
 
         [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
         self.cachedBounds = CGRectNull;
 
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
         // M11 — Track Low Power Mode and re-apply the rate on changes.
         // The notification fires on the user toggling LPM from the menu
         // bar / Settings, or on automatic enter/exit by the OS.
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(ghosttyPowerStateDidChange:)
-                                                     name:NSProcessInfoPowerStateDidChangeNotification
-                                                   object:nil];
+        [center addObserver:self
+                   selector:@selector(ghosttyPowerStateDidChange:)
+                       name:NSProcessInfoPowerStateDidChangeNotification
+                     object:nil];
+        [center addObserver:self
+                   selector:@selector(ghosttyColorSchemeDidChange:)
+                       name:GhosttyColorSchemeDidChangeNotification
+                     object:nil];
 
         os_log_info(sLog,
-                    "Init view (preview=%{public}d, %.0fx%.0f, frames=%{public}lu, lpm=%{public}d)",
+                    "Init view (preview=%{public}d, %.0fx%.0f, frames=%{public}lu, scheme=%{public}@, lpm=%{public}d)",
                     isPreview, frame.size.width, frame.size.height,
                     (unsigned long)self.frames.count,
+                    self.scheme.identifier,
                     (int)NSProcessInfo.processInfo.lowPowerModeEnabled);
     }
     return self;
@@ -93,9 +108,51 @@ static os_log_t sPOILog;
 
 - (void)dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver:self
-                                                    name:NSProcessInfoPowerStateDidChangeNotification
-                                                  object:nil];
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    [center removeObserver:self name:NSProcessInfoPowerStateDidChangeNotification object:nil];
+    [center removeObserver:self name:GhosttyColorSchemeDidChangeNotification object:nil];
+}
+
+#pragma mark - Color scheme
+
+- (void)applyScheme:(GhosttyColorScheme *)scheme
+{
+    if (scheme == self.scheme && self.frames.count > 0) {
+        return;
+    }
+    NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
+    self.frames = [GhosttyFrameLoader framesForScheme:scheme bundle:thisBundle];
+    self.scheme = scheme;
+    // The loader fails open on a bad frame file, so a new load can be
+    // shorter than the array this view was cycling. Keep the index in range
+    // for the draw that setNeedsDisplay: triggers.
+    if (self.currentFrameIndex >= (NSInteger)self.frames.count) {
+        self.currentFrameIndex = 0;
+    }
+    self.layer.backgroundColor = scheme.backgroundColor;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)ghosttyColorSchemeDidChange:(NSNotification *)note
+{
+    NSString *identifier = note.userInfo[GhosttyColorSchemeIdentifierKey];
+    [self applyScheme:[GhosttyColorScheme schemeWithIdentifier:identifier]];
+}
+
+#pragma mark - Options sheet
+
+- (BOOL)hasConfigureSheet
+{
+    return YES;
+}
+
+- (NSWindow *)configureSheet
+{
+    if (!self.optionsSheet) {
+        self.optionsSheet = [[GhosttyOptionsSheet alloc] init];
+    }
+    [self.optionsSheet prepareWithScheme:self.scheme];
+    return self.optionsSheet.window;
 }
 
 #pragma mark - Power state
@@ -139,8 +196,8 @@ static os_log_t sPOILog;
 
     CGRect bounds = self.bounds;
     CGSize canvas = [GhosttyFrameLoader canvasSize];
-    // An empty canvas means no frames loaded; empty bounds cover a host
-    // that asks a 0×0 instance to draw.
+    // Empty bounds cover the 0×0 preview instance macOS 26 creates; an
+    // empty canvas means no frames loaded.
     if (self.frames.count == 0 || NSIsEmptyRect(bounds) ||
         canvas.width <= 0 || canvas.height <= 0) {
         os_signpost_interval_end(sPOILog, spid, "DrawFrame", "empty");
@@ -154,11 +211,19 @@ static os_log_t sPOILog;
     // Placement is a function of bounds alone: the canvas size is shared by
     // every frame and the ink midpoint is one anchor for the whole loop.
     // Recompute only when the host changes bounds (it can do so without
-    // calling setFrame:), never per tick. The old cache was keyed on the
-    // frame index, so it missed on every tick and re-ran the 100-column
-    // probe line plus CTFramesetterSuggestFrameSizeWithConstraints 30
-    // times a second (26 percent of drawRect CPU).
+    // calling setFrame:), never per tick.
     if (!CGRectEqualToRect(self.cachedBounds, bounds)) {
+        // The canvas never shrinks while it fits, so every display that
+        // shows the whole ghost today is unchanged. When it does not fit
+        // (the System Settings preview), shrink it inside a margin.
+        CGFloat fit = 1.0;
+        if (MIN(bounds.size.width / canvas.width, bounds.size.height / canvas.height) < 1.0) {
+            CGFloat margin = kGhosttyFitMargin * MIN(bounds.size.width, bounds.size.height);
+            fit = MIN((bounds.size.width - 2.0 * margin) / canvas.width,
+                      (bounds.size.height - 2.0 * margin) / canvas.height);
+            fit = MIN(1.0, MAX(fit, 0.01));
+        }
+        self.cachedFit = fit;
         self.cachedDrawSize = canvas;
         self.cachedDrawOrigin = CGPointMake(NSMidX(bounds) - canvas.width / 2.0,
                                             NSMidY(bounds) - [GhosttyFrameLoader inkMidpoint]);
@@ -187,6 +252,14 @@ static os_log_t sPOILog;
     CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
     CGContextSaveGState(ctx);
     CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
+    if (self.cachedFit < 1.0) {
+        // Shrink about the bounds center. The origin already centers the
+        // canvas horizontally and the ink midpoint vertically on that
+        // point, so scaling about it keeps both centered.
+        CGContextTranslateCTM(ctx, NSMidX(bounds), NSMidY(bounds));
+        CGContextScaleCTM(ctx, self.cachedFit, self.cachedFit);
+        CGContextTranslateCTM(ctx, -NSMidX(bounds), -NSMidY(bounds));
+    }
     CTFrameDraw(ctFrame, ctx);
     CGContextRestoreGState(ctx);
 

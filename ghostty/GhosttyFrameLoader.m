@@ -7,25 +7,15 @@
 //
 
 #import "GhosttyFrameLoader.h"
+#import "GhosttyColorScheme.h"
 #import <AppKit/AppKit.h>
 #import <CoreText/CoreText.h>
 #import <os/log.h>
 #import <os/signpost.h>
 
-// File-level statics, populated once in +initialize. The hot path
-// (attributedFrameFromRawHTML:) reads them branch-free, and every
-// NSAttributedString allocated in this file shares the same attribute
-// dictionary references.
-//
-// Colors are CGColor under the Core Text key, not NSColor under the AppKit
-// key. CTFrameDraw uses a CGColor as it is; an NSColor is converted through
-// ColorSync on every run of every tick, which was 39 percent of CTFrameDraw
-// time when measured.
-static CGColorRef sBlueColor;
-static CGColorRef sWhiteColor;
-static NSFont  *sMonospacedFont;
-static NSDictionary<NSAttributedStringKey, id> *sAttrsWhite;
-static NSDictionary<NSAttributedStringKey, id> *sAttrsBlue;
+// File-level statics, populated once in +initialize. The font is shared by
+// every attributed string in every scheme; the regexes compile once.
+static NSFont *sMonospacedFont;
 static NSRegularExpression *sSpanRegex;
 static NSRegularExpression *sFilenameRegex;
 static os_log_t sLog;
@@ -35,15 +25,18 @@ static os_log_t sLog;
 // without a special build.
 static os_log_t sPOILog;
 
-// Process-wide cache: the frames, plus geometry that depends on font and
-// corpus only. Main thread only (see header).
+// Process-wide cache: the last scheme loaded and its frames, plus geometry
+// that depends on font and corpus only. Main thread only (see header).
+static GhosttyColorScheme *sCachedScheme;
 static NSArray<NSAttributedString *> *sCachedFrames;
 static CGSize sCanvasSize;
 static CGFloat sInkMidpoint;
 static BOOL sGeometryReady;
 
 @interface GhosttyFrameLoader ()
-- (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw;
+- (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
+                                    bodyAttributes:(NSDictionary<NSAttributedStringKey, id> *)bodyAttributes
+                                  accentAttributes:(NSDictionary<NSAttributedStringKey, id> *)accentAttributes;
 + (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames;
 @end
 
@@ -57,9 +50,6 @@ static BOOL sGeometryReady;
         return;
     }
 
-    sBlueColor = CGColorCreateSRGB(0.0, 0.0, 230.0 / 255.0, 1.0);
-    sWhiteColor = CGColorCreateSRGB(215.0 / 255.0, 215.0 / 255.0, 215.0 / 255.0, 1.0);
-
     // Defensive font fallback. -fontWithName:size: can return nil (Font
     // Book disable, MDM lockdown, future macOS removal). With nil, the
     // attribute-dict literal below would crash via -insertObject:nil.
@@ -70,16 +60,6 @@ static BOOL sGeometryReady;
                    ?: [NSFont userFixedPitchFontOfSize:16.0]
                    ?: [NSFont systemFontOfSize:16.0];
     NSAssert(sMonospacedFont != nil, @"No usable monospaced font available");
-
-    // The font key is shared with Core Text (kCTFontAttributeName is the
-    // same string), so one dictionary serves both worlds.
-    sAttrsWhite = @{
-        NSFontAttributeName: sMonospacedFont,
-        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)sWhiteColor,
-    };
-    sAttrsBlue = @{
-        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)sBlueColor,
-    };
 
     // NSRegularExpressionDotMatchesLineSeparators lets `.*?` cross line
     // boundaries, which the upstream frame generator occasionally produces.
@@ -104,11 +84,25 @@ static BOOL sGeometryReady;
 #pragma mark - Public API
 
 - (NSArray<NSAttributedString *> *)loadFramesFromBundle:(NSBundle *)bundle
+                                                 scheme:(GhosttyColorScheme *)scheme
 {
     NSParameterAssert(bundle != nil);
+    NSParameterAssert(scheme != nil);
 
     os_signpost_id_t spid = os_signpost_id_generate(sPOILog);
-    os_signpost_interval_begin(sPOILog, spid, "FrameLoad");
+    os_signpost_interval_begin(sPOILog, spid, "FrameLoad", "scheme=%{public}s", scheme.identifier.UTF8String);
+
+    // Colors go in as CGColor under the Core Text key. CTFrameDraw then uses
+    // them as they are; an NSColor under NSForegroundColorAttributeName is
+    // converted through ColorSync on every run of every tick (39 percent of
+    // CTFrameDraw time when measured). The font key is shared with Core Text.
+    NSDictionary<NSAttributedStringKey, id> *bodyAttributes = @{
+        NSFontAttributeName: sMonospacedFont,
+        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)scheme.bodyColor,
+    };
+    NSDictionary<NSAttributedStringKey, id> *accentAttributes = @{
+        (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)scheme.accentColor,
+    };
 
     NSDate *startDate = [NSDate date];
     NSArray<NSString *> *paths = [bundle pathsForResourcesOfType:@"txt" inDirectory:nil];
@@ -148,14 +142,17 @@ static BOOL sGeometryReady;
                 continue;
             }
 
-            [loadedFrames addObject:[self attributedFrameFromRawHTML:rawContent]];
+            [loadedFrames addObject:[self attributedFrameFromRawHTML:rawContent
+                                                      bodyAttributes:bodyAttributes
+                                                    accentAttributes:accentAttributes]];
         }
     }
 
     NSTimeInterval elapsedMs = [[NSDate date] timeIntervalSinceDate:startDate] * 1000.0;
     os_log_info(sLog,
-                "Loaded %{public}lu frames in %.1f ms (skipped: %{public}lu non-frame, %{public}lu read errors)",
+                "Loaded %{public}lu frames for %{public}@ in %.1f ms (skipped: %{public}lu non-frame, %{public}lu read errors)",
                 (unsigned long)loadedFrames.count,
+                scheme.identifier,
                 elapsedMs,
                 (unsigned long)skippedNonFrame,
                 (unsigned long)skippedReadError);
@@ -171,9 +168,11 @@ static BOOL sGeometryReady;
 #pragma mark - Private Helpers
 
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
+                                    bodyAttributes:(NSDictionary<NSAttributedStringKey, id> *)bodyAttributes
+                                  accentAttributes:(NSDictionary<NSAttributedStringKey, id> *)accentAttributes
 {
     // Two passes: strip the tags into one plain string while noting where
-    // each blue run lands, then color the runs in place. One attributed
+    // each accent run lands, then color the runs in place. One attributed
     // string plus ~160 addAttributes: calls is about 3× cheaper than
     // appending ~160 attributed pieces.
     NSArray<NSTextCheckingResult *> *matches =
@@ -203,11 +202,11 @@ static BOOL sGeometryReady;
     }
 
     NSMutableAttributedString *frame = [[NSMutableAttributedString alloc] initWithString:plain
-                                                                              attributes:sAttrsWhite];
+                                                                              attributes:bodyAttributes];
     const NSRange *run = runs.bytes;
     NSUInteger runCount = runs.length / sizeof(NSRange);
     for (NSUInteger i = 0; i < runCount; i++) {
-        [frame addAttributes:sAttrsBlue range:run[i]];
+        [frame addAttributes:accentAttributes range:run[i]];
     }
 
     return [frame copy];
@@ -274,23 +273,27 @@ static BOOL sGeometryReady;
                 canvas.width, canvas.height, sInkMidpoint);
 }
 
-#pragma mark - Process-Singleton Cache
+#pragma mark - Process Cache
 
-+ (NSArray<NSAttributedString *> *)sharedFramesForBundle:(NSBundle *)bundle
++ (NSArray<NSAttributedString *> *)framesForScheme:(GhosttyColorScheme *)scheme
+                                            bundle:(NSBundle *)bundle
 {
+    NSParameterAssert(scheme != nil);
     NSParameterAssert(bundle != nil);
     NSAssert(NSThread.isMainThread, @"GhosttyFrameLoader is main-thread only");
 
-    if (sCachedFrames.count > 0) {
+    // Schemes are process singletons, so identity is the cache key.
+    if (scheme == sCachedScheme && sCachedFrames.count > 0) {
         return sCachedFrames;
     }
 
     NSArray<NSAttributedString *> *frames =
-        [[[GhosttyFrameLoader alloc] init] loadFramesFromBundle:bundle];
+        [[[GhosttyFrameLoader alloc] init] loadFramesFromBundle:bundle scheme:scheme];
     if (frames.count == 0) {
         return frames;
     }
 
+    sCachedScheme = scheme;
     sCachedFrames = frames;
     if (!sGeometryReady) {
         [self measureGeometryWithFrames:frames];

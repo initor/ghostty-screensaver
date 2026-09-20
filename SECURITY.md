@@ -15,8 +15,9 @@ their GitHub profile.
 
 This is an unsigned macOS screensaver bundle (`.saver`) that runs inside
 Apple's `legacyScreenSaver` sandbox. It reads only its bundled
-`frame_NNN.txt` resources, makes no network requests, and writes nothing
-outside the sandbox. In-scope reports are anything that:
+`frame_NNN.txt` resources, makes no network requests, and writes one
+preference (the chosen color scheme) through `ScreenSaverDefaults` inside
+the sandbox container. In-scope reports are anything that:
 
 - Causes the bundle to read or write paths it shouldn't.
 - Triggers code execution beyond the rendering of bundled ASCII frames.

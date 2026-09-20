@@ -6,24 +6,40 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Color schemes. Pick one under System Settings → Screen Saver → ghostty →
+  Options…: Classic (the original look, still the default), Catppuccin Latte,
+  Frappé, Macchiato, and Mocha. The choice is stored per user and per Mac with
+  `ScreenSaverDefaults` under the key `ColorScheme`.
+- Per scheme rendering checks and an Options sheet smoke test in
+  `tests/render_bundle.m`.
+- `assets/color-schemes.gif`, the loop in the four Catppuccin schemes.
+
 ### Changed
+- The System Settings preview scales the animation to fit instead of cropping
+  it. Displays that fit the full canvas are unchanged.
 - Text colors are stored as Core Graphics colors under the Core Text
   attribute key, so no color conversion happens per tick.
 - Frame size and origin are computed once per bounds instead of once per
   tick. Together with the color change, draw time per frame drops by about
-  a third (1.89 to 1.18 ms at 1080p on an M4).
+  a third.
 - The whole cycle ink measurement runs once per process instead of once per
   view, which removes a 74 ms stall on every additional display and on the
   Settings preview.
 - Low Power Mode changes apply on the main thread.
 - The release job runs the rendering checks from the release commit instead
   of from `main`.
+- README rewritten around install and color schemes. Developer content moved
+  to CONTRIBUTING.md. FRAMES.md describes the color roles.
 
 ### Fixed
-- A failed or empty first frame load is no longer cached for the life of
-  the process.
-- README no longer claims `drawRect:` is allocation free, or that the frame
-  rate depends on AC power.
+- A failed first frame load is no longer cached for the life of the process.
+- FRAMES.md named the old log subsystem and linked a file outside the repo.
+
+### Removed
+- `assets/demo_light.png`, unreferenced since 1.7.4.
+
+Existing installs keep the original colors. No migration.
 
 ## [1.7.5] — 2026-09-16
 
