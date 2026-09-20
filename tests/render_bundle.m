@@ -3,6 +3,7 @@
 #import <AppKit/AppKit.h>
 #import <ScreenSaver/ScreenSaver.h>
 #import <CoreText/CoreText.h>
+#import <QuartzCore/QuartzCore.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <math.h>
 
@@ -10,8 +11,28 @@ static NSUInteger failures, checks;
 static NSMutableArray<NSString *> *failureMessages;
 static NSString *outputDirectory;
 static NSBundle *saverBundle;
-static NSMutableDictionary<NSNumber *, NSNumber *> *referenceCycleMidpoints;
+static NSMutableDictionary<NSString *, NSNumber *> *referenceCycleMidpoints;
 static NSMutableArray<NSDictionary *> *cycleResults;
+static NSMutableArray<NSDictionary *> *schemeResults;
+
+// The harness's own copy of the scheme contract (ghostty/GhosttyColorScheme.m).
+// Ids, popup order, display names and colors are asserted against the bundle,
+// so a drift on either side fails here instead of shipping.
+typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; } SchemeSpec;
+static const SchemeSpec kSchemes[] = {
+    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6 },
+    { "catppuccin-latte",     "Catppuccin Latte",     0xeff1f5, 0x4c4f69, 0x1e66f5 },
+    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee },
+    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4 },
+    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa },
+};
+static const NSUInteger kSchemeCount = sizeof(kSchemes) / sizeof(kSchemes[0]);
+// The scheme every view created from here on gets, and the background every
+// raster is filled with. The harness never reads or writes ScreenSaverDefaults:
+// outside the sandbox a write would land in the developer's own preferences.
+static const SchemeSpec *gScheme = &kSchemes[0];
+// Fit rule from GhosttyView.drawRect:, recomputed here as an oracle.
+static const CGFloat kFitMargin = 0.08;
 
 static void Check(BOOL ok, NSString *message) {
     checks++;
@@ -22,12 +43,40 @@ static void Check(BOOL ok, NSString *message) {
     }
 }
 
+static void SelectScheme(const char *identifier) {
+    for (NSUInteger i = 0; i < kSchemeCount; i++) {
+        if (!strcmp(kSchemes[i].identifier, identifier)) { gScheme = &kSchemes[i]; return; }
+    }
+    Check(NO, [NSString stringWithFormat:@"unknown harness scheme %s", identifier]);
+}
+
+static id LookupScheme(NSString *identifier) {
+    Class schemeClass = NSClassFromString(@"GhosttyColorScheme");
+    id scheme = [schemeClass performSelector:@selector(schemeWithIdentifier:) withObject:identifier];
+    Check(scheme != nil, [@"scheme lookup " stringByAppendingString:identifier]);
+    return scheme;
+}
+
+// The same entry point the Options sheet drives; never touches preferences.
+static void ApplyScheme(ScreenSaverView *view, const char *identifier) {
+    [view performSelector:@selector(applyScheme:) withObject:LookupScheme(@(identifier))];
+}
+
 static ScreenSaverView *NewView(NSRect bounds, BOOL preview) {
     Class cls = saverBundle.principalClass;
     ScreenSaverView *view = [[cls alloc] initWithFrame:NSMakeRect(0, 0, bounds.size.width, bounds.size.height)
                                           isPreview:preview];
     view.bounds = bounds;
+    ApplyScheme(view, gScheme->identifier);
     return view;
+}
+
+static CGFloat ExpectedFit(NSRect bounds, NSSize canvas) {
+    if (MIN(bounds.size.width / canvas.width, bounds.size.height / canvas.height) >= 1) return 1;
+    CGFloat margin = kFitMargin * MIN(bounds.size.width, bounds.size.height);
+    CGFloat fit = MIN((bounds.size.width - 2 * margin) / canvas.width,
+                      (bounds.size.height - 2 * margin) / canvas.height);
+    return MIN(1.0, MAX(fit, 0.01));
 }
 
 static NSString *SHA256(NSData *data) {
@@ -50,7 +99,9 @@ static NSBitmapImageRep *Bitmap(NSSize size, CGFloat scale) {
     return rep;
 }
 
-static NSBitmapImageRep *Render(ScreenSaverView *view, CGFloat scale, CTFrameRef reference) {
+// `fit` scales a reference render about the bounds center exactly as the saver
+// does for small bounds. The saver path (reference == NULL) applies its own.
+static NSBitmapImageRep *Render(ScreenSaverView *view, CGFloat scale, CTFrameRef reference, CGFloat fit) {
     NSRect bounds = view.bounds;
     NSBitmapImageRep *rep = Bitmap(bounds.size, scale);
     CGColorSpaceRef colorSpace = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
@@ -66,13 +117,20 @@ static NSBitmapImageRep *Render(ScreenSaverView *view, CGFloat scale, CTFrameRef
     // implicit bitmap size/backing-scale conventions.
     CGContextConcatCTM(ctx, CGAffineTransformInvert(CGContextGetCTM(ctx)));
     CGContextScaleCTM(ctx, scale, scale);
-    CGContextSetRGBFillColor(ctx, 0, 0, 0, 1);
+    // The layer background the saver relies on, from the harness's own table.
+    CGContextSetRGBFillColor(ctx, ((gScheme->bg >> 16) & 0xff) / 255.0,
+                             ((gScheme->bg >> 8) & 0xff) / 255.0, (gScheme->bg & 0xff) / 255.0, 1);
     CGContextFillRect(ctx, CGRectMake(0, 0, bounds.size.width, bounds.size.height));
     CGContextTranslateCTM(ctx, -bounds.origin.x, -bounds.origin.y);
     CGContextClipToRect(ctx, bounds);
     CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
     if (reference) {
         // Draw the reference line-by-line rather than invoking the saver's draw code.
+        if (fit < 1) {
+            CGContextTranslateCTM(ctx, NSMidX(bounds), NSMidY(bounds));
+            CGContextScaleCTM(ctx, fit, fit);
+            CGContextTranslateCTM(ctx, -NSMidX(bounds), -NSMidY(bounds));
+        }
         CFArrayRef lines = CTFrameGetLines(reference);
         CFIndex count = CFArrayGetCount(lines);
         CGPoint *origins = calloc((size_t)count, sizeof(CGPoint));
@@ -95,14 +153,18 @@ static NSBitmapImageRep *Render(ScreenSaverView *view, CGFloat scale, CTFrameRef
     return rep;
 }
 
+// Ink is any pixel whose largest channel distance from the scheme background
+// exceeds 8, so light schemes measure the same way as black.
 static NSDictionary *Ink(NSBitmapImageRep *rep) {
+    int bg[3] = { (int)((gScheme->bg >> 16) & 0xff), (int)((gScheme->bg >> 8) & 0xff), (int)(gScheme->bg & 0xff) };
     NSInteger left = rep.pixelsWide, right = -1, top = rep.pixelsHigh, bottom = -1;
     NSUInteger count = 0;
     for (NSInteger y = 0; y < rep.pixelsHigh; y++) {
         unsigned char *row = rep.bitmapData + y * rep.bytesPerRow;
         for (NSInteger x = 0; x < rep.pixelsWide; x++) {
             unsigned char *p = row + 4 * x;
-            if (MAX(p[0], MAX(p[1], p[2])) > 8) {
+            int d = MAX(abs((int)p[0] - bg[0]), MAX(abs((int)p[1] - bg[1]), abs((int)p[2] - bg[2])));
+            if (d > 8) {
                 left = MIN(left, x); right = MAX(right, x);
                 top = MIN(top, y); bottom = MAX(bottom, y); count++;
             }
@@ -126,6 +188,29 @@ static NSUInteger PixelDifference(NSBitmapImageRep *a, NSBitmapImageRep *b) {
         }
     }
     return different;
+}
+
+// Pixels whose sRGB value equals `rgb` exactly.
+static NSUInteger ExactPixels(NSBitmapImageRep *rep, unsigned rgb) {
+    unsigned char want[3] = { (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff };
+    NSUInteger count = 0;
+    for (NSInteger y = 0; y < rep.pixelsHigh; y++) {
+        unsigned char *row = rep.bitmapData + y * rep.bytesPerRow;
+        for (NSInteger x = 0; x < rep.pixelsWide; x++) {
+            unsigned char *p = row + 4 * x;
+            if (p[0] == want[0] && p[1] == want[1] && p[2] == want[2]) count++;
+        }
+    }
+    return count;
+}
+
+static BOOL LayerBackgroundIs(ScreenSaverView *view, unsigned rgb) {
+    CGColorRef color = view.layer.backgroundColor;
+    if (!color || CGColorGetNumberOfComponents(color) < 3) return NO;
+    const CGFloat *c = CGColorGetComponents(color);
+    return fabs(c[0] * 255 - ((rgb >> 16) & 0xff)) < 0.5 &&
+           fabs(c[1] * 255 - ((rgb >> 8) & 0xff)) < 0.5 &&
+           fabs(c[2] * 255 - (rgb & 0xff)) < 0.5;
 }
 
 static void SavePNG(NSBitmapImageRep *rep, NSString *name) {
@@ -183,7 +268,7 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
     NSPoint probeOrigin = NSMakePoint(64, 64);
     path = CGPathCreateWithRect(NSMakeRect(probeOrigin.x, probeOrigin.y, size.width, size.height), NULL);
     frame = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), path, NULL);
-    NSBitmapImageRep *raster = Render(probe, scale, frame);
+    NSBitmapImageRep *raster = Render(probe, scale, frame, 1);
     NSDictionary *ink = Ink(raster);
     Check([ink[@"pixels"] unsignedIntegerValue] > 0, [label stringByAppendingString:@" generous reference has ink"]);
     Check([ink[@"left"] integerValue] > 0 && [ink[@"right"] integerValue] < raster.pixelsWide - 1 &&
@@ -195,7 +280,7 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
     if (!rowDirection) {
         CGPathRef shiftedPath = CGPathCreateWithRect(NSMakeRect(64, 65, size.width, size.height), NULL);
         CTFrameRef shifted = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), shiftedPath, NULL);
-        NSDictionary *shiftInk = Ink(Render(probe, scale, shifted));
+        NSDictionary *shiftInk = Ink(Render(probe, scale, shifted, 1));
         CGFloat shiftCenter = ([shiftInk[@"top"] doubleValue] + [shiftInk[@"bottom"] doubleValue] + 1) / 2;
         rowDirection = (shiftCenter - centerPixel) / scale;
         Check(fabs(fabs(rowDirection) - 1) < 0.001, @"bitmap row orientation calibrates to one point");
@@ -214,9 +299,10 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
     return frame;
 }
 
-// Union independent pixel extents in one canonical layout, once per scale.
+// Union independent pixel extents in one canonical layout, once per scale and scheme.
 static CGFloat ReferenceCycleMidpoint(NSArray<NSAttributedString *> *frames, CGFloat scale) {
-    NSNumber *cached = referenceCycleMidpoints[@(scale)];
+    NSString *key = [NSString stringWithFormat:@"%s@%g", gScheme->identifier, scale];
+    NSNumber *cached = referenceCycleMidpoints[key];
     if (cached) return cached.doubleValue;
     CGFloat minimum = CGFLOAT_MAX, maximum = -CGFLOAT_MAX;
     NSRect bounds = NSMakeRect(0, 0, 1920, 1080);
@@ -232,7 +318,7 @@ static CGFloat ReferenceCycleMidpoint(NSArray<NSAttributedString *> *frames, CGF
         }
     }
     CGFloat midpoint = (minimum + maximum) / 2;
-    referenceCycleMidpoints[@(scale)] = @(midpoint);
+    referenceCycleMidpoints[key] = @(midpoint);
     return midpoint;
 }
 
@@ -247,21 +333,28 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     NSSize expectedSize, completeInkSize; NSPoint expectedOrigin;
     CTFrameRef reference = Reference(frames[index], view.bounds, scale, &expectedSize, &expectedOrigin,
                                      &completeInkSize, ReferenceCycleMidpoint(frames, scale), label);
-    NSBitmapImageRep *actual = Render(view, scale, NULL);
-    NSBitmapImageRep *expected = Render(view, scale, reference);
+    // The fit oracle: full-screen cases must not scale, small bounds must.
+    BOOL fullScreen = ![name hasPrefix:@"preview-fit"];
+    CGFloat expectedFit = ExpectedFit(view.bounds, expectedSize);
+    Check(fullScreen ? expectedFit == 1.0 : expectedFit < 1.0,
+          [NSString stringWithFormat:@"%@ fit oracle %.4f matches case kind", label, expectedFit]);
+    NSBitmapImageRep *actual = Render(view, scale, NULL, 1);
+    NSBitmapImageRep *expected = Render(view, scale, reference, expectedFit);
     CFRelease(reference);
     NSSize actualSize = [[view valueForKey:@"cachedDrawSize"] sizeValue];
     NSPoint actualOrigin = [[view valueForKey:@"cachedDrawOrigin"] pointValue];
+    CGFloat actualFit = [[view valueForKey:@"cachedFit"] doubleValue];
     Check(fabs(actualSize.width - expectedSize.width) < 0.01 &&
           fabs(actualSize.height - expectedSize.height) < 0.01 &&
           fabs(actualOrigin.x - expectedOrigin.x) < 0.01,
           [NSString stringWithFormat:@"%@ canvas expected %@ at %@, got %@ at %@", label,
               NSStringFromSize(expectedSize), NSStringFromPoint(expectedOrigin),
               NSStringFromSize(actualSize), NSStringFromPoint(actualOrigin)]);
+    Check(fabs(actualFit - expectedFit) < 0.000001,
+          [NSString stringWithFormat:@"%@ fit expected %.6f, got %.6f", label, expectedFit, actualFit]);
     NSDictionary *ink = Ink(actual), *referenceInk = Ink(expected);
     Check([ink[@"pixels"] unsignedIntegerValue] > 0 && [referenceInk[@"pixels"] unsignedIntegerValue] > 0,
           [label stringByAppendingString:@" nonblank actual and reference pixels"]);
-    BOOL fullScreen = ![name hasPrefix:@"preview-clipped"];
     Check(fabs(actualOrigin.y - expectedOrigin.y) <= 1.0,
           [label stringByAppendingString:@" origin matches independent cycle raster envelope within 1 pt"]);
     if (fullScreen) {
@@ -273,6 +366,12 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
         Check([ink[@"left"] integerValue] > 0 && [ink[@"right"] integerValue] < actual.pixelsWide - 1 &&
               [ink[@"top"] integerValue] > 0 && [ink[@"bottom"] integerValue] < actual.pixelsHigh - 1,
               [label stringByAppendingString:@" full-screen artwork has clear edges"]);
+    } else {
+        // Scaled to fit: the whole ghost is inside the bounds with a visible margin.
+        NSInteger clear = (NSInteger)llround(4 * scale);
+        Check([ink[@"left"] integerValue] >= clear && [ink[@"right"] integerValue] < actual.pixelsWide - clear &&
+              [ink[@"top"] integerValue] >= clear && [ink[@"bottom"] integerValue] < actual.pixelsHigh - clear,
+              [NSString stringWithFormat:@"%@ fitted artwork keeps a clear edge (ink %@)", label, ink]);
     }
     // Content oracle keeps the independently measured X, but follows the actual
     // Y translation so fractional raster phase cannot mask a missing glyph/row.
@@ -281,7 +380,7 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     CGPathRef alignedPath = CGPathCreateWithRect(NSMakeRect(expectedOrigin.x, actualOrigin.y,
         expectedSize.width, expectedSize.height), NULL);
     CTFrameRef alignedFrame = CTFramesetterCreateFrame(fs, CFRangeMake(0, [frames[index] length]), alignedPath, NULL);
-    NSBitmapImageRep *aligned = Render(view, scale, alignedFrame);
+    NSBitmapImageRep *aligned = Render(view, scale, alignedFrame, expectedFit);
     CFRelease(alignedFrame); CGPathRelease(alignedPath); CFRelease(fs);
     NSDictionary *alignedInk = Ink(aligned);
     BOOL boxMatches = YES;
@@ -290,8 +389,8 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
     }
     Check(boxMatches, [NSString stringWithFormat:@"%@ aligned content bounds expected %@, got %@", label, alignedInk, ink]);
     NSUInteger different = PixelDifference(actual, aligned);
-    // Normalize by reference ink, not the mostly-black screen area. A missing row
-    // or a 77-point translation must not disappear into a full-screen tolerance.
+    // Normalize by reference ink, not the mostly-background screen area. A missing
+    // row or a 77-point translation must not disappear into a full-screen tolerance.
     NSUInteger allowed = MAX((NSUInteger)4, [alignedInk[@"pixels"] unsignedIntegerValue] / 1000);
     Check(different <= allowed,
           [NSString stringWithFormat:@"%@ full-frame pixel mismatch %lu (allowed %lu)", label,
@@ -301,8 +400,8 @@ static void TestFrame(ScreenSaverView *view, NSUInteger index, CGFloat scale, NS
         SavePNG(actual, [stem stringByAppendingString:@"-actual.png"]);
         SavePNG(expected, [stem stringByAppendingString:@"-reference.png"]);
     }
-    [samples addObject:@{@"case": label, @"ink": ink, @"referenceInk": referenceInk,
-        @"originY": @(actualOrigin.y), @"expectedOriginY": @(expectedOrigin.y),
+    [samples addObject:@{@"case": label, @"scheme": @(gScheme->identifier), @"ink": ink, @"referenceInk": referenceInk,
+        @"originY": @(actualOrigin.y), @"expectedOriginY": @(expectedOrigin.y), @"fit": @(actualFit),
         @"completeInkSize": NSStringFromSize(completeInkSize),
         @"differentPixels": @(different), @"canvasSize": NSStringFromSize(actualSize),
         @"canvasOrigin": NSStringFromPoint(actualOrigin), @"passed": @(failures == before)}];
@@ -339,7 +438,7 @@ static void TestCycle(ScreenSaverView *view, CGFloat scale, NSString *name, NSMu
     maximumStep = MAX(maximumStep, wrapStep);
     Check(fabs(wrapOrigin - firstOrigin) <= 0.000001 && wrapStep <= 0.000001,
           [name stringByAppendingString:@" cyclic wrap preserves origin and zero step"]);
-    BOOL fullScreen = ![name hasPrefix:@"preview-clipped"];
+    BOOL fullScreen = ![name hasPrefix:@"preview-fit"];
     CGFloat pixelsHigh = llround(view.bounds.size.height * scale);
     CGFloat error = fabs((top + bottom + 1 - pixelsHigh) / (2 * scale));
     CGFloat referenceError = fabs((referenceTop + referenceBottom + 1 - pixelsHigh) / (2 * scale));
@@ -347,10 +446,153 @@ static void TestCycle(ScreenSaverView *view, CGFloat scale, NSString *name, NSMu
         Check(error <= 1.0, [NSString stringWithFormat:@"%@ whole-cycle pixel union center error %.3f pt exceeds 1 pt", name, error]);
         Check(referenceError <= 1.0, [name stringByAppendingString:@" independent whole-cycle raster union is centered"]);
     }
-    [cycleResults addObject:@{@"case": name, @"scale": @(scale), @"frames": @235,
+    [cycleResults addObject:@{@"case": name, @"scheme": @(gScheme->identifier), @"scale": @(scale), @"frames": @235,
         @"originY": @(firstOrigin), @"maximumOriginStepPoints": @(maximumStep),
         @"verticalCenterErrorPoints": @(error), @"referenceVerticalCenterErrorPoints": @(referenceError),
         @"centeringRequired": @(fullScreen)}];
+}
+
+static void TestFrameAttributes(NSAttributedString *frame, NSString *label);
+
+// Every scheme draws its own three colors and nobody else's. Ranking the most
+// common colors does not work at 1x: antialiased shades of the body outrank
+// the thin accent halo. Exact counts do (measured minima 12,057 body and
+// 2,161 accent on frames 1 and 117 at 1920x1080).
+static void TestSchemeColors(void) {
+    for (NSUInteger s = 0; s < kSchemeCount; s++) {
+        SelectScheme(kSchemes[s].identifier);
+        ScreenSaverView *view = NewView(NSMakeRect(0, 0, 1920, 1080), NO);
+        NSString *name = [NSString stringWithFormat:@"scheme-%s", gScheme->identifier];
+        Check(LayerBackgroundIs(view, gScheme->bg), [name stringByAppendingString:@" layer background"]);
+        for (NSNumber *index in @[@0, @117]) {
+            [view setValue:index forKey:@"currentFrameIndex"];
+            NSBitmapImageRep *rep = Render(view, 1, NULL, 1);
+            NSString *label = [NSString stringWithFormat:@"%@ frame=%03d", name, index.intValue];
+            unsigned char *corner = rep.bitmapData;
+            Check(corner[0] == ((gScheme->bg >> 16) & 0xff) && corner[1] == ((gScheme->bg >> 8) & 0xff) &&
+                  corner[2] == (gScheme->bg & 0xff), [label stringByAppendingString:@" corner pixel is the background"]);
+            NSUInteger body = ExactPixels(rep, gScheme->body), accent = ExactPixels(rep, gScheme->accent);
+            Check(body >= 10000, [NSString stringWithFormat:@"%@ exact body pixels %lu >= 10000", label, (unsigned long)body]);
+            Check(accent >= 1000, [NSString stringWithFormat:@"%@ exact accent pixels %lu >= 1000", label, (unsigned long)accent]);
+            Check(body > accent, [NSString stringWithFormat:@"%@ body pixels %lu outnumber accent pixels %lu", label,
+                                  (unsigned long)body, (unsigned long)accent]);
+            TestFrameAttributes([view valueForKey:@"frames"][index.unsignedIntegerValue], label);
+            for (NSUInteger o = 0; o < kSchemeCount; o++) {
+                if (o == s) continue;
+                NSUInteger foreign = ExactPixels(rep, kSchemes[o].body) + ExactPixels(rep, kSchemes[o].accent);
+                Check(foreign == 0, [NSString stringWithFormat:@"%@ draws %lu pixels of %s", label,
+                                     (unsigned long)foreign, kSchemes[o].identifier]);
+            }
+            if (index.intValue == 117) SavePNG(rep, [name stringByAppendingString:@"-117-1x.png"]);
+            [schemeResults addObject:@{@"scheme": @(gScheme->identifier), @"frame": index,
+                @"bodyPixels": @(body), @"accentPixels": @(accent)}];
+        }
+    }
+    SelectScheme("classic");
+}
+
+// Exact CGColor components under the Core Text key, and no AppKit color key:
+// the perf change depends on CTFrameDraw never converting an NSColor per run.
+static BOOL AttributesCarry(NSDictionary *attrs, unsigned rgb) {
+    id value = attrs[(__bridge NSString *)kCTForegroundColorAttributeName];
+    if (!value || CFGetTypeID((__bridge CFTypeRef)value) != CGColorGetTypeID()) return NO;
+    if (attrs[NSForegroundColorAttributeName]) return NO;
+    CGColorRef color = (__bridge CGColorRef)value;
+    if (CGColorGetNumberOfComponents(color) < 3) return NO;
+    const CGFloat *c = CGColorGetComponents(color);
+    return fabs(c[0] * 255 - ((rgb >> 16) & 0xff)) < 0.5 && fabs(c[1] * 255 - ((rgb >> 8) & 0xff)) < 0.5 &&
+           fabs(c[2] * 255 - (rgb & 0xff)) < 0.5;
+}
+
+static void TestFrameAttributes(NSAttributedString *frame, NSString *label) {
+    Check(AttributesCarry([frame attributesAtIndex:0 effectiveRange:NULL], gScheme->body),
+          [label stringByAppendingString:@" body run carries the scheme body CGColor under the Core Text key"]);
+    __block NSUInteger accentRuns = 0, otherRuns = 0;
+    [frame enumerateAttributesInRange:NSMakeRange(0, frame.length) options:0
+                           usingBlock:^(NSDictionary *attrs, NSRange range, BOOL *stop) {
+        (void)range; (void)stop;
+        if (AttributesCarry(attrs, gScheme->body)) return;
+        if (AttributesCarry(attrs, gScheme->accent)) accentRuns++; else otherRuns++;
+    }];
+    Check(accentRuns > 0 && otherRuns == 0,
+          [NSString stringWithFormat:@"%@ %lu accent runs carry the accent CGColor, %lu runs carry something else",
+           label, (unsigned long)accentRuns, (unsigned long)otherRuns]);
+}
+
+// The lookup contract: table order, and every missing or unknown value
+// resolves to the first row. Goes through the loaded class only.
+static void TestSchemeLookup(void) {
+    Class schemeClass = NSClassFromString(@"GhosttyColorScheme");
+    NSArray *all = [schemeClass performSelector:@selector(allSchemes)];
+    Check(all.count == kSchemeCount, [NSString stringWithFormat:@"lookup: %lu schemes in the table", (unsigned long)all.count]);
+    for (NSUInteger i = 0; i < kSchemeCount && i < all.count; i++) {
+        Check([[all[i] valueForKey:@"identifier"] isEqual:@(kSchemes[i].identifier)] &&
+              [[all[i] valueForKey:@"displayName"] isEqual:@(kSchemes[i].displayName)],
+              [NSString stringWithFormat:@"lookup: row %lu is %s", (unsigned long)i, kSchemes[i].identifier]);
+        Check(LookupScheme(@(kSchemes[i].identifier)) == all[i],
+              [NSString stringWithFormat:@"lookup: %s resolves to its table object", kSchemes[i].identifier]);
+    }
+    NSDictionary<NSString *, NSString *> *cases = @{
+        @"": @"classic", @"   ": @"classic", @"not-a-scheme": @"classic", @"CLASSIC": @"classic",
+        @"  Catppuccin-Mocha \n": @"catppuccin-mocha", @"catppuccin-latte": @"catppuccin-latte",
+    };
+    for (NSString *input in cases) {
+        id scheme = LookupScheme(input);
+        Check([[scheme valueForKey:@"identifier"] isEqual:cases[input]],
+              [NSString stringWithFormat:@"lookup: '%@' resolves to %@", input, cases[input]]);
+    }
+    id fallback = [schemeClass performSelector:@selector(schemeWithIdentifier:) withObject:nil];
+    Check(fallback == all.firstObject && [[fallback valueForKey:@"identifier"] isEqual:@"classic"],
+          @"lookup: nil resolves to the first row, classic");
+}
+
+static NSView *FindSubview(NSView *root, Class cls, NSString *title) {
+    if ([root isKindOfClass:cls] && (!title || [[(NSButton *)root title] isEqual:title])) return root;
+    for (NSView *child in root.subviews) {
+        NSView *found = FindSubview(child, cls, title);
+        if (found) return found;
+    }
+    return nil;
+}
+
+// The Options sheet is the only new UI. Drive it without showing it: popup
+// changes must reach the view live, Cancel must restore. OK is never sent
+// because it would write the developer's real preferences.
+static void TestOptionsSheet(void) {
+    SelectScheme("classic");
+    ScreenSaverView *view = NewView(NSMakeRect(0, 0, 800, 600), YES);
+    Check(view.hasConfigureSheet, @"sheet: hasConfigureSheet");
+    NSWindow *window = view.configureSheet;
+    Check(window != nil, @"sheet: configureSheet returns a window");
+    Check(view.configureSheet == window, @"sheet: window is reused across requests");
+    Check(!window.releasedWhenClosed, @"sheet: window survives close");
+    NSPopUpButton *popup = (NSPopUpButton *)FindSubview(window.contentView, NSPopUpButton.class, nil);
+    Check(popup != nil, @"sheet: one popup");
+    if (!popup) return;
+    Check(popup.numberOfItems == (NSInteger)kSchemeCount,
+          [NSString stringWithFormat:@"sheet: %ld popup items", (long)popup.numberOfItems]);
+    for (NSUInteger i = 0; i < kSchemeCount && (NSInteger)i < popup.numberOfItems; i++) {
+        Check([[popup itemTitleAtIndex:(NSInteger)i] isEqual:@(kSchemes[i].displayName)],
+              [NSString stringWithFormat:@"sheet: item %lu is %s", (unsigned long)i, kSchemes[i].displayName]);
+    }
+    Check(popup.indexOfSelectedItem == 0, @"sheet: opens on the current scheme");
+    NSArray *before = [view valueForKey:@"frames"];
+    for (NSUInteger i = 1; i < kSchemeCount && (NSInteger)i < popup.numberOfItems; i++) {
+        [popup selectItemAtIndex:(NSInteger)i];
+        [popup sendAction:popup.action to:popup.target];
+        Check(LayerBackgroundIs(view, kSchemes[i].bg),
+              [NSString stringWithFormat:@"sheet: selecting %s updates the view live", kSchemes[i].identifier]);
+        NSArray *after = [view valueForKey:@"frames"];
+        Check(after != before, [NSString stringWithFormat:@"sheet: %s swaps the frames", kSchemes[i].identifier]);
+        before = after;
+    }
+    NSButton *cancel = (NSButton *)FindSubview(window.contentView, NSButton.class, @"Cancel");
+    Check(cancel != nil, @"sheet: Cancel button");
+    if (cancel) [cancel sendAction:cancel.action to:cancel.target];
+    Check(LayerBackgroundIs(view, kSchemes[0].bg), @"sheet: Cancel restores the opening scheme");
+    Check([view.configureSheet isEqual:window] && popup.indexOfSelectedItem == 0,
+          @"sheet: reopening selects the restored scheme");
+    Check(FindSubview(window.contentView, NSButton.class, @"OK") != nil, @"sheet: OK button");
 }
 
 int main(int argc, const char *argv[]) {
@@ -362,6 +604,7 @@ int main(int argc, const char *argv[]) {
         failureMessages = [NSMutableArray array];
         referenceCycleMidpoints = [NSMutableDictionary dictionary];
         cycleResults = [NSMutableArray array];
+        schemeResults = [NSMutableArray array];
         outputDirectory = [[NSString stringWithUTF8String:argv[2]] stringByStandardizingPath];
         NSError *error = nil;
         if (![[NSFileManager defaultManager] createDirectoryAtPath:outputDirectory
@@ -407,7 +650,7 @@ int main(int argc, const char *argv[]) {
                 @[@"laptop", @1512, @982, @NO],
                 @[@"portrait", @1080, @1920, @NO],
                 @[@"odd-bounds", @1601, @1001, @NO],
-                @[@"preview-clipped", @800, @600, @YES]
+                @[@"preview-fit", @800, @600, @YES]
             ];
             for (NSArray *entry in cases) {
                 ScreenSaverView *view = NewView(NSMakeRect(0, 0, [entry[1] doubleValue], [entry[2] doubleValue]), [entry[3] boolValue]);
@@ -416,11 +659,20 @@ int main(int argc, const char *argv[]) {
                 if (frames.count != 235) continue;
                 TestCycle(view, 1, entry[0], samples);
             }
+            // One full cycle on a light-on-dark Catppuccin scheme: centering and
+            // stability on the CGColor path with a non-black background.
+            SelectScheme("catppuccin-mocha");
+            ScreenSaverView *mochaView = NewView(NSMakeRect(0, 0, 1920, 1080), NO);
+            if ([[mochaView valueForKey:@"frames"] count] == 235) TestCycle(mochaView, 1, @"landscape-mocha", samples);
+            SelectScheme("classic");
+            TestSchemeLookup();
+            TestSchemeColors();
+            TestOptionsSheet();
             ScreenSaverView *view = NewView(NSMakeRect(0, 0, 1512, 982), NO);
             if ([[view valueForKey:@"frames"] count] == 235) {
                 TestCycle(view, 2, @"retina", samples);
-                NSBitmapImageRep *first = Render(view, 1, NULL);
-                NSBitmapImageRep *second = Render(view, 1, NULL);
+                NSBitmapImageRep *first = Render(view, 1, NULL, 1);
+                NSBitmapImageRep *second = Render(view, 1, NULL, 1);
                 Check(PixelDifference(first, second) == 0, @"same-frame repeat render is identical");
                 CGFloat localMidpoint = NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y;
                 [view setFrame:NSMakeRect(0, 0, 1920, 1080)];
@@ -436,7 +688,7 @@ int main(int argc, const char *argv[]) {
                 Check(fabs(NSMidY(view.bounds) - [[view valueForKey:@"cachedDrawOrigin"] pointValue].y - localMidpoint) <= 0.000001,
                       @"bounds translation preserves cycle midpoint");
                 ScreenSaverView *fresh = NewView(view.bounds, NO);
-                Check(PixelDifference(Render(view, 1, NULL), Render(fresh, 1, NULL)) == 0,
+                Check(PixelDifference(Render(view, 1, NULL, 1), Render(fresh, 1, NULL, 1)) == 0,
                       @"same-index bounds changes match fresh view");
                 [fresh stopAnimation]; [fresh startAnimation];
                 TestFrame(fresh, 0, 1, @"restart", YES, samples);
@@ -455,7 +707,7 @@ int main(int argc, const char *argv[]) {
             @"os": NSProcessInfo.processInfo.operatingSystemVersionString,
             @"checks": @(checks), @"failures": @(failures), @"passed": @(failures == 0),
             @"failureMessages": failureMessages, @"samples": samples,
-            @"cycles": cycleResults,
+            @"cycles": cycleResults, @"schemes": schemeResults,
             @"scope": @"Actual bundle drawRect into explicit bitmap; not WindowServer/ScreenSaverEngine composition."
         };
         NSData *json = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:&error];
