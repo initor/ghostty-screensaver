@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- The README color scheme GIF kept only one palette for all four tiles, so
+  the three dark Catppuccin flavors looked alike. It is now remapped to an
+  explicit palette of each scheme's own colors.
+
+## [1.8.1] — 2026-09-20
+
 ### Added
 - Color schemes. Pick one under System Settings → Screen Saver → ghostty →
   Options…: Classic (the original look, still the default), Catppuccin Latte,
@@ -18,28 +25,37 @@ adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 - The System Settings preview scales the animation to fit instead of cropping
   it. Displays that fit the full canvas are unchanged.
-- Text colors are stored as Core Graphics colors under the Core Text
-  attribute key, so no color conversion happens per tick.
-- Frame size and origin are computed once per bounds instead of once per
-  tick. Together with the color change, draw time per frame drops by about
-  a third.
-- The whole cycle ink measurement runs once per process instead of once per
-  view, which removes a 74 ms stall on every additional display and on the
-  Settings preview.
-- Low Power Mode changes apply on the main thread.
-- The release job runs the rendering checks from the release commit instead
-  of from `main`.
 - README rewritten around install and color schemes. Developer content moved
   to CONTRIBUTING.md. FRAMES.md describes the color roles.
 
 ### Fixed
-- A failed first frame load is no longer cached for the life of the process.
 - FRAMES.md named the old log subsystem and linked a file outside the repo.
 
 ### Removed
 - `assets/demo_light.png`, unreferenced since 1.7.4.
 
 Existing installs keep the original colors. No migration.
+
+## [1.8.0] — 2026-09-20
+
+### Changed
+- Text colors are stored as Core Graphics colors under the Core Text
+  attribute key, so no color conversion happens per tick.
+- Frame size and origin are computed once per bounds instead of once per
+  tick. Together with the color change, draw time per frame drops by about
+  a third (1.89 to 1.18 ms at 1080p on an M4).
+- The whole cycle ink measurement runs once per process instead of once per
+  view, which removes a 74 ms stall on every additional display and on the
+  Settings preview.
+- Low Power Mode changes apply on the main thread.
+- The release job runs the rendering checks from the release commit instead
+  of from `main`.
+
+### Fixed
+- A failed or empty first frame load is no longer cached for the life of
+  the process.
+- README no longer claims `drawRect:` is allocation free, or that the frame
+  rate depends on AC power.
 
 ## [1.7.5] — 2026-09-16
 
@@ -132,7 +148,9 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.7.5...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/initor/ghostty-screensaver/compare/v1.8.0...v1.8.1
+[1.8.0]: https://github.com/initor/ghostty-screensaver/compare/v1.7.5...v1.8.0
 [1.7.5]: https://github.com/initor/ghostty-screensaver/compare/v1.7.4...v1.7.5
 [1.7.4]: https://github.com/initor/ghostty-screensaver/compare/v1.7.3...v1.7.4
 [1.7.3]: https://github.com/initor/ghostty-screensaver/compare/v1.7.2...v1.7.3
