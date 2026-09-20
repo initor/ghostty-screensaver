@@ -79,8 +79,10 @@ To add a scheme:
 4. Add the row to the README table and regenerate `assets/color-schemes.gif`:
    render every frame of each scheme through `drawRect:` at 1040 by 820
    (the ghost fits with no crop), tile them 2 by 2 at 600 px per scheme,
-   and encode every other frame at 15 fps with a global 16 color palette
-   and no dithering. That keeps the file near 3 MB.
+   and encode every other frame at 15 fps, remapped to an explicit palette
+   of each scheme's three colors plus two midtones, no dithering. Letting
+   the encoder pick a palette merges the accents of the dark flavors.
+   That keeps the file near 3 MB.
 
 Never write `ScreenSaverDefaults` from a test. Outside the sandbox the write
 lands in your own `~/Library/Preferences/ByHost`. The harness applies schemes
