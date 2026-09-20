@@ -210,7 +210,10 @@ jobs:
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$SAVER_PATH/Contents/Info.plist")
           lipo "$SAVER_PATH/Contents/MacOS/$EXECUTABLE" -verify_arch arm64 x86_64
           codesign --verify --strict --verbose=2 "$SAVER_PATH"
-          bash release-automation/tests/verify-rendering.sh "$SAVER_PATH" "$RUNNER_TEMP/render-verification"
+          # The harness is versioned with the code it gates. Running it from the
+          # release source (not from main) is what keeps a stricter harness
+          # merged later from failing an older queued release (v1.7.4).
+          bash tests/verify-rendering.sh "$SAVER_PATH" "$RUNNER_TEMP/render-verification"
 
       - name: Upload rendering evidence
         if: always()
