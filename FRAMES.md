@@ -1,16 +1,15 @@
 # Frame Format Specification
 
 The 235 ASCII art frames under `ghostty/static/animation_frames/` are the
-content of this screensaver. This document describes their format so new
-frames or new highlight colors can be added without reverse-engineering
+content of this screensaver. This document describes their format so new frames or new color schemes can be added without reverse-engineering
 the loader.
 
 > **Attribution.** The current 235-frame corpus is derived from
 > [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames),
 > Copyright (c) 2024 Ghostty, redistributed under MIT. See
 > [LICENSE](LICENSE) for the full upstream notice. This document covers
-> the file format, not the artwork — new contributions under the same
-> format are welcome (see [Contributing](README.md#contributing)).
+> the file format, not the artwork. New contributions under the same
+> format are welcome (see [CONTRIBUTING.md](CONTRIBUTING.md)).
 
 ## File location and naming
 
@@ -26,17 +25,17 @@ the loader.
 - **Bundle layout:** Xcode's synchronized root group (`PBXFileSystemSynchronizedRootGroup`)
   flattens the on-disk structure when copying resources, so every frame
   ends up at `Contents/Resources/frame_NNN.txt` in the built `.saver`.
-  This is verified — see `.planning/review/bench/B1-bundle-verification.md`.
+  `tests/render_bundle.m` checks the resource count and order in CI and before every release.
 
 ## Encoding
 
 - UTF-8. The loader reads with `NSUTF8StringEncoding` and skips any file
   that fails to decode (logged to the unified log subsystem
-  `com.ghostty.screensaver`).
+  `com.initor.ghostty-screensaver`).
 - The corpus is mostly 7-bit ASCII plus the middle dot character `·`
   (U+00B7).
 - Do **not** add a BOM; macOS NSString reads UTF-8 BOM-prefixed files
-  fine, but it's needless noise.
+  fine, but it is needless noise.
 
 ## Span tag syntax
 
@@ -46,8 +45,10 @@ Inside a `.txt` file, any text wrapped in:
 <span class="b">…</span>
 ```
 
-is rendered in **blue** (sRGB 0,0,230). Everything else is rendered in
-**white** (sRGB 215,215,215).
+is rendered in the color scheme's **accent** color. Everything else is
+rendered in the scheme's **body** color. In the default Classic scheme the
+accent is blue (sRGB 0,0,230) and the body is light gray (sRGB 215,215,215).
+See *Color roles and schemes* below.
 
 ### Behaviors and edge cases
 
@@ -56,16 +57,16 @@ is rendered in **blue** (sRGB 0,0,230). Everything else is rendered in
   content of a span can span newlines.
 - **Nested spans are not supported.** The parser uses a non-greedy
   match (`(.*?)`), so an outer span will be consumed and any inner
-  span tag literals end up rendered as text. Don't nest.
+  span tag literals end up rendered as text. Do not nest.
 - **Other class names are not supported.** Only `class="b"` is recognized.
-  `<span class="r">red</span>` is currently rendered as ordinary white
-  text. To add a new color, see *Adding a new color* below.
+  `<span class="r">red</span>` is rendered as ordinary body text. The
+  corpus has exactly one accent role (17,858 spans, all `class="b"`).
 - **Malformed spans (no closing tag) are ignored.** The regex requires
   a closing `</span>`; any unmatched opening tag is rendered as literal
   text.
 - **Whitespace inside tags must be exact.** The regex matches
-  `<span class="b">` literally — extra spaces or different attribute
-  ordering will not match.
+  `<span class="b">` literally. Extra spaces or a different attribute
+  order will not match.
 
 ## Adding a new frame
 
@@ -76,38 +77,25 @@ is rendered in **blue** (sRGB 0,0,230). Everything else is rendered in
 3. Build. Xcode's synchronized group includes it automatically; no
    project-file edit needed.
 
-## Adding a new color
+## Color roles and schemes
 
-The loader's regex pattern, the attribute dictionaries, and the colors
-all live as file-level statics in `ghostty/GhosttyFrameLoader.m`'s
-`+initialize`. Adding a new color (say red, `class="r"`) requires three
-edits:
+A frame has two color roles: **body** (all plain text) and **accent** (the
+text inside `<span class="b">`). A color scheme adds a **background** and
+assigns one sRGB color to each role. The loader bakes the two text colors
+into the attributed strings at load time as `CGColor` values under
+`kCTForegroundColorAttributeName`; the view sets the background on its layer.
 
-1. Add a static for the color:
-   ```objc
-   static NSColor *sRedColor;
-   ```
-   and initialize it in `+initialize`:
-   ```objc
-   sRedColor = [NSColor colorWithSRGBRed:230.0/255.0 green:0.0 blue:0.0 alpha:1.0];
-   ```
+The schemes are one static table in `ghostty/GhosttyColorScheme.m`:
 
-2. Add a corresponding attribute dictionary:
-   ```objc
-   static NSDictionary<NSAttributedStringKey, id> *sAttrsRed;
-   …
-   sAttrsRed = @{
-       NSFontAttributeName: sMonospacedFont,
-       NSForegroundColorAttributeName: sRedColor
-   };
-   ```
+```objc
+{ "catppuccin-mocha", "Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x89b4fa },
+//  identifier         display name       background body      accent
+```
 
-3. Update `attributedFrameFromRawHTML:`. The current single-class regex
-   needs to either become a multi-alternation pattern
-   (`<span class="(b|r)">(.*?)</span>`) or be replaced with a more
-   structured parser. Pick the appropriate attribute dictionary based on
-   the matched class group.
+The identifier is stored in `ScreenSaverDefaults` and must never change once
+shipped. To add a scheme, add a row here and the same row to the table in
+`tests/render_bundle.m`, then run `tests/verify-rendering.sh`. The harness
+asserts the popup order, the display names, and the exact pixel colors.
 
-If new colors are likely to keep arriving, consider lifting the color
-table to a `@{class: NSColor}` map and replacing the single-class regex
-with one that captures `class` as a group.
+Adding a second accent role (a new span class) would need a second regex
+group and a fourth color per scheme. Nothing in the corpus uses one today.

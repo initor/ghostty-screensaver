@@ -1,5 +1,5 @@
 name: Bug report
-description: Something isn't working — animation stutters, screensaver won't install, crash, etc.
+description: Something is not working. Animation stutters, screensaver will not install, crash, etc.
 title: "[bug] "
 labels: ["bug"]
 body:
@@ -7,7 +7,7 @@ body:
     attributes:
       value: |
         Thanks for filing a report. Please complete the environment fields
-        below — most screensaver bugs are environment-specific (macOS
+        below. Most screensaver bugs are environment-specific (macOS
         version, chip, Low Power Mode state) and the fastest fixes start
         from a complete picture.
 
@@ -36,6 +36,7 @@ body:
         - "macOS 14 Sonoma"
         - "macOS 15 Sequoia"
         - "macOS 26 Tahoe"
+        - "macOS 27"
         - "Other (note in description)"
     validations:
       required: true
@@ -60,6 +61,21 @@ body:
         - "Don't know"
     validations:
       required: true
+
+  - type: dropdown
+    id: scheme
+    attributes:
+      label: Color scheme
+      description: System Settings → Screen Saver → ghostty → Options…
+      options:
+        - "Classic (default)"
+        - "Catppuccin Latte"
+        - "Catppuccin Frappé"
+        - "Catppuccin Macchiato"
+        - "Catppuccin Mocha"
+        - "Don't know"
+    validations:
+      required: false
 
   - type: input
     id: displays
