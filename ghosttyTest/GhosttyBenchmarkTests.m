@@ -25,6 +25,7 @@
 //       (or repoint GHOSTTY_FRAMES_BUNDLE_PATH at a built saver).
 //    4. Drag GhosttyFrameLoader.m onto the ghosttyTest target's "Compile
 //       Sources" build phase. (Logic-only test bundle, no TEST_HOST.)
+//       Nothing in CI compiles this file.
 //    5. Edit the ghostty scheme → Test → add ghosttyTest.
 //
 //  How to run:
@@ -47,6 +48,7 @@
 #import <mach/task_info.h>
 
 #import "GhosttyFrameLoader.h"
+#import <CoreText/CoreText.h>
 
 #pragma mark - Constants
 
@@ -137,32 +139,23 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     }
 }
 
-/// At least some frames contain a blue-attributed run.
-/// (The blue color is sRGB 0,0,230/255,1 — defined in GhosttyFrameLoader.m.)
+/// At least some frames contain an accent-attributed run.
+/// (Colors are CGColor under kCTForegroundColorAttributeName since 1.8.0;
+/// the blue is sRGB 0,0,230, defined in GhosttyFrameLoader.m.)
 - (void)testAtLeastOneFrameContainsBlueRun {
     NSArray<NSAttributedString *> *frames = self.cachedFrames;
     NSUInteger framesWithBlueRun = 0;
 
-    NSColor *expectedBlue = [NSColor colorWithSRGBRed:0.0
-                                                green:0.0
-                                                 blue:(230.0 / 255.0)
-                                                alpha:1.0];
-
     for (NSAttributedString *frame in frames) {
         __block BOOL blueFound = NO;
-        [frame enumerateAttribute:NSForegroundColorAttributeName
+        [frame enumerateAttribute:(__bridge NSAttributedStringKey)kCTForegroundColorAttributeName
                           inRange:NSMakeRange(0, frame.length)
                           options:0
                        usingBlock:^(id value, NSRange range, BOOL *stop) {
-            NSColor *c = (NSColor *)value;
-            if (![c isKindOfClass:[NSColor class]]) return;
-            // Compare in sRGB. NSColor equality is fussy; convert and compare components.
-            NSColor *cInSRGB = [c colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-            NSColor *bInSRGB = [expectedBlue colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-            if (cInSRGB && bInSRGB &&
-                fabs(cInSRGB.redComponent   - bInSRGB.redComponent)   < 0.01 &&
-                fabs(cInSRGB.greenComponent - bInSRGB.greenComponent) < 0.01 &&
-                fabs(cInSRGB.blueComponent  - bInSRGB.blueComponent)  < 0.01) {
+            CGColorRef c = (__bridge CGColorRef)value;
+            if (!c || CGColorGetNumberOfComponents(c) < 3) return;
+            const CGFloat *rgb = CGColorGetComponents(c);
+            if (fabs(rgb[0] - 0.0) < 0.01 && fabs(rgb[1] - 0.0) < 0.01 && fabs(rgb[2] - 230.0 / 255.0) < 0.01) {
                 blueFound = YES;
                 *stop = YES;
             }
@@ -375,20 +368,16 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     NSAttributedString *result = [self parsedAttributedStringFromRawHTML:raw];
     XCTAssertEqual(result.length, raw.length, @"All input characters should round-trip.");
 
-    NSColor *whiteExpected = [NSColor colorWithSRGBRed:(215.0/255.0)
-                                                 green:(215.0/255.0)
-                                                  blue:(215.0/255.0)
-                                                 alpha:1.0];
     __block BOOL allWhite = YES;
-    [result enumerateAttribute:NSForegroundColorAttributeName
+    [result enumerateAttribute:(__bridge NSAttributedStringKey)kCTForegroundColorAttributeName
                        inRange:NSMakeRange(0, result.length)
                        options:0
                     usingBlock:^(id value, NSRange range, BOOL *stop) {
-        NSColor *c = [(NSColor *)value colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-        NSColor *w = [whiteExpected   colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-        if (!c || fabs(c.redComponent   - w.redComponent)   >= 0.01 ||
-                  fabs(c.greenComponent - w.greenComponent) >= 0.01 ||
-                  fabs(c.blueComponent  - w.blueComponent)  >= 0.01) {
+        CGColorRef c = (__bridge CGColorRef)value;
+        const CGFloat *rgb = (c && CGColorGetNumberOfComponents(c) >= 3) ? CGColorGetComponents(c) : NULL;
+        if (!rgb || fabs(rgb[0] - 215.0 / 255.0) >= 0.01 ||
+                    fabs(rgb[1] - 215.0 / 255.0) >= 0.01 ||
+                    fabs(rgb[2] - 215.0 / 255.0) >= 0.01) {
             allWhite = NO;
             *stop = YES;
         }
@@ -421,12 +410,12 @@ static uint64_t GhosttyResidentSetSizeBytes(void) {
     XCTAssertNotEqual(blueRange.location, (NSUInteger)NSNotFound);
 
     NSDictionary *attrs = [result attributesAtIndex:blueRange.location effectiveRange:NULL];
-    NSColor *fg = [(NSColor *)attrs[NSForegroundColorAttributeName]
-                   colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
-    XCTAssertNotNil(fg);
-    XCTAssertEqualWithAccuracy(fg.blueComponent,  230.0/255.0, 0.01);
-    XCTAssertEqualWithAccuracy(fg.redComponent,   0.0,         0.01);
-    XCTAssertEqualWithAccuracy(fg.greenComponent, 0.0,         0.01);
+    CGColorRef fg = (__bridge CGColorRef)attrs[(__bridge NSAttributedStringKey)kCTForegroundColorAttributeName];
+    XCTAssertTrue(fg != NULL && CGColorGetNumberOfComponents(fg) >= 3);
+    const CGFloat *rgb = CGColorGetComponents(fg);
+    XCTAssertEqualWithAccuracy(rgb[2], 230.0/255.0, 0.01);
+    XCTAssertEqualWithAccuracy(rgb[0], 0.0,         0.01);
+    XCTAssertEqualWithAccuracy(rgb[1], 0.0,         0.01);
 }
 
 #pragma mark - 7. Sort order (localizedStandardCompare vs compare)

@@ -25,23 +25,19 @@ static os_log_t sPOILog;
 
 // Process-shared, immutable. Acquired in init via
 // +[GhosttyFrameLoader sharedFramesForBundle:]; multi-display and
-// preview-pane instances reuse the same array.
+// preview-pane instances reuse the same array. tests/render_bundle.m reads
+// `frames` by name via valueForKey:.
 @property (nonatomic, copy) NSArray<NSAttributedString *> *frames;
 
 // Cycled by animateOneFrame each tick.
 @property (nonatomic, assign) NSInteger currentFrameIndex;
 
-// Cached centering math. The used-rect produced by Core Text and the
-// resulting centered origin are a function of (frame-index, view-bounds);
-// recomputing every tick is wasted work.
-@property (nonatomic, assign) NSInteger cachedOriginIndex;
+// Cached placement, keyed on bounds only. Every frame shares one canvas
+// size, so the origin depends on nothing else. The harness reads
+// cachedDrawSize and cachedDrawOrigin by name.
 @property (nonatomic, assign) CGSize cachedDrawSize;
 @property (nonatomic, assign) CGPoint cachedDrawOrigin;
 @property (nonatomic, assign) CGRect cachedBounds;
-
-// One anchor for the whole animation preserves its authored motion.
-// Only a scalar is retained, not Core Text frames or font caches.
-@property (nonatomic, strong) NSNumber *animationInkMidpoint;
 
 @end
 
@@ -68,16 +64,15 @@ static os_log_t sPOILog;
         self.layer.backgroundColor = NSColor.blackColor.CGColor;
 
         // Process-singleton frame array. The first GhosttyView pays the
-        // ~30 ms (warm) load cost; every subsequent instance — multi-
-        // display, System Settings preview pane, view re-instantiation —
-        // returns instantly with the same immutable array.
+        // load and the whole-cycle geometry pass; every subsequent instance
+        // (multi-display, System Settings preview pane, view
+        // re-instantiation) returns instantly with the same immutable array.
         NSBundle *thisBundle = [NSBundle bundleForClass:[self class]];
         self.frames = [GhosttyFrameLoader sharedFramesForBundle:thisBundle];
 
         [self applyAnimationRateForCurrentPowerState];
         self.currentFrameIndex = 0;
-        self.cachedOriginIndex = -1;
-        self.cachedBounds = self.bounds;
+        self.cachedBounds = CGRectNull;
 
         // M11 — Track Low Power Mode and re-apply the rate on changes.
         // The notification fires on the user toggling LPM from the menu
@@ -115,10 +110,14 @@ static os_log_t sPOILog;
 
 - (void)ghosttyPowerStateDidChange:(NSNotification *)note
 {
-    BOOL lpm = NSProcessInfo.processInfo.lowPowerModeEnabled;
-    os_log_info(sLog, "Power state change → lpm=%{public}d (%.1f Hz)",
-                (int)lpm, lpm ? 15.0 : 30.0);
-    [self applyAnimationRateForCurrentPowerState];
+    // Posted on a global dispatch queue. animationTimeInterval reschedules
+    // the host's NSTimer, which belongs to the main thread.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        BOOL lpm = NSProcessInfo.processInfo.lowPowerModeEnabled;
+        os_log_info(sLog, "Power state change → lpm=%{public}d (%.1f Hz)",
+                    (int)lpm, lpm ? 15.0 : 30.0);
+        [self applyAnimationRateForCurrentPowerState];
+    });
 }
 
 #pragma mark - ScreenSaverView Lifecycle
@@ -138,95 +137,39 @@ static os_log_t sPOILog;
                                "frame=%{public}ld",
                                (long)self.currentFrameIndex);
 
-    if (self.frames.count == 0) {
+    CGRect bounds = self.bounds;
+    CGSize canvas = [GhosttyFrameLoader canvasSize];
+    // An empty canvas means no frames loaded; empty bounds cover a host
+    // that asks a 0×0 instance to draw.
+    if (self.frames.count == 0 || NSIsEmptyRect(bounds) ||
+        canvas.width <= 0 || canvas.height <= 0) {
         os_signpost_interval_end(sPOILog, spid, "DrawFrame", "empty");
         return;
     }
 
-    NSAttributedString *attr = self.frames[self.currentFrameIndex];
+    NSAttributedString *attr = self.frames[(NSUInteger)self.currentFrameIndex];
     CFAttributedStringRef cfAttr = (__bridge CFAttributedStringRef)attr;
     CFRange textRange = CFRangeMake(0, (CFIndex)attr.length);
 
-    CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(cfAttr);
-
-    // Used-rect and centered origin are stable for a given (index, bounds)
-    // pair. Cache so steady-state animation only recomputes when the index
-    // advances (every tick by definition) but not when drawRect: is called
-    // for non-animation reasons (occlusion changes). Include the full bounds
-    // in the cache key: hosts can change bounds without calling setFrame:.
-    CGSize usedSize;
-    CGPoint origin;
-    if (self.cachedOriginIndex == self.currentFrameIndex &&
-        CGRectEqualToRect(self.cachedBounds, self.bounds)) {
-        usedSize = self.cachedDrawSize;
-        origin = self.cachedDrawOrigin;
-    } else {
-        // Preserve the full 100-column canvas horizontally. The framesetter
-        // omits trailing whitespace, whereas CTLine typographic width includes it.
-        NSString *raw = attr.string;
-        NSRange firstNL = [raw rangeOfString:@"\n"];
-        NSUInteger cols = (firstNL.location != NSNotFound)
-                        ? firstNL.location : raw.length;
-        NSDictionary *probeAttrs = [attr attributesAtIndex:0
-                                            effectiveRange:NULL];
-        NSString *fullLine = [@"" stringByPaddingToLength:cols
-                                              withString:@" "
-                                         startingAtIndex:0];
-        NSAttributedString *probe = [[NSAttributedString alloc]
-            initWithString:fullLine attributes:probeAttrs];
-        CTLineRef probeLine = CTLineCreateWithAttributedString(
-            (__bridge CFAttributedStringRef)probe);
-        CGFloat trueWidth = CTLineGetTypographicBounds(probeLine, NULL, NULL, NULL);
-        CFRelease(probeLine);
-
-        CGSize suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter, textRange, NULL,
-            CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL);
-
-        usedSize = CGSizeMake(trueWidth, suggested.height);
-        NSNumber *midpoint = self.animationInkMidpoint;
-        if (!midpoint) {
-            CGPathRef measurePath = CGPathCreateWithRect(
-                CGRectMake(0, 0, usedSize.width, usedSize.height), NULL);
-            CGRect ink = CGRectNull;
-            // Every bundled frame has the same 100-column, 41-row layout.
-            // Union the entire loop before drawing so the anchor never shifts
-            // when a character appears, disappears, or moves between frames.
-            for (NSAttributedString *frame in self.frames) {
-                @autoreleasepool {
-                    CTFramesetterRef measureSetter = CTFramesetterCreateWithAttributedString(
-                        (__bridge CFAttributedStringRef)frame);
-                    CTFrameRef measureFrame = CTFramesetterCreateFrame(
-                        measureSetter, CFRangeMake(0, frame.length), measurePath, NULL);
-                    CFArrayRef lines = CTFrameGetLines(measureFrame);
-                    for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
-                        CTLineRef line = (CTLineRef)CFArrayGetValueAtIndex(lines, i);
-                        CGRect glyphs = CTLineGetImageBounds(line, NULL);
-                        if (!CGRectIsNull(glyphs) && !CGRectIsEmpty(glyphs)) {
-                            CGPoint baseline;
-                            CTFrameGetLineOrigins(measureFrame, CFRangeMake(i, 1), &baseline);
-                            ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
-                        }
-                    }
-                    CFRelease(measureFrame);
-                    CFRelease(measureSetter);
-                }
-            }
-            midpoint = @(CGRectIsNull(ink) ? usedSize.height / 2.0 : CGRectGetMidY(ink));
-            self.animationInkMidpoint = midpoint;
-            CGPathRelease(measurePath);
-        }
-        origin = CGPointMake(NSMidX(self.bounds) - usedSize.width / 2.0,
-                             NSMidY(self.bounds) - midpoint.doubleValue);
-        self.cachedDrawSize    = usedSize;
-        self.cachedDrawOrigin  = origin;
-        self.cachedOriginIndex = self.currentFrameIndex;
-        self.cachedBounds      = self.bounds;
+    // Placement is a function of bounds alone: the canvas size is shared by
+    // every frame and the ink midpoint is one anchor for the whole loop.
+    // Recompute only when the host changes bounds (it can do so without
+    // calling setFrame:), never per tick. The old cache was keyed on the
+    // frame index, so it missed on every tick and re-ran the 100-column
+    // probe line plus CTFramesetterSuggestFrameSizeWithConstraints 30
+    // times a second (26 percent of drawRect CPU).
+    if (!CGRectEqualToRect(self.cachedBounds, bounds)) {
+        self.cachedDrawSize = canvas;
+        self.cachedDrawOrigin = CGPointMake(NSMidX(bounds) - canvas.width / 2.0,
+                                            NSMidY(bounds) - [GhosttyFrameLoader inkMidpoint]);
+        self.cachedBounds = bounds;
     }
 
-    CGRect pathRect = CGRectMake(origin.x, origin.y, usedSize.width, usedSize.height);
+    CGRect pathRect = CGRectMake(self.cachedDrawOrigin.x, self.cachedDrawOrigin.y,
+                                 self.cachedDrawSize.width, self.cachedDrawSize.height);
     CGMutablePathRef path = CGPathCreateMutable();
     CGPathAddRect(path, NULL, pathRect);
+    CTFramesetterRef framesetter = CTFramesetterCreateWithAttributedString(cfAttr);
     CTFrameRef ctFrame = CTFramesetterCreateFrame(framesetter, textRange, path, NULL);
     CGPathRelease(path);
 
@@ -240,6 +183,7 @@ static os_log_t sPOILog;
     // not retained between draws, which is the H6 fix: NSLayoutManager's
     // glyph/font caches grew unboundedly across setAttributedString: swaps
     // (~1.6 KB / frame, no plateau on macOS 26 per B8 measurement).
+    // Retaining 235 CTFrames instead would cost 45 MB for 0.12 ms per tick.
     CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
     CGContextSaveGState(ctx);
     CGContextSetTextMatrix(ctx, CGAffineTransformIdentity);
@@ -257,7 +201,7 @@ static os_log_t sPOILog;
     if (self.frames.count == 0) {
         return;
     }
-    self.currentFrameIndex = (self.currentFrameIndex + 1) % self.frames.count;
+    self.currentFrameIndex = (self.currentFrameIndex + 1) % (NSInteger)self.frames.count;
     os_signpost_event_emit(sPOILog, OS_SIGNPOST_ID_EXCLUSIVE, "Tick",
                            "frame=%{public}ld",
                            (long)self.currentFrameIndex);

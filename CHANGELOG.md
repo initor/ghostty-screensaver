@@ -6,9 +6,48 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Text colors are stored as Core Graphics colors under the Core Text
+  attribute key, so no color conversion happens per tick.
+- Frame size and origin are computed once per bounds instead of once per
+  tick. Together with the color change, draw time per frame drops by about
+  a third (1.89 to 1.18 ms at 1080p on an M4).
+- The whole cycle ink measurement runs once per process instead of once per
+  view, which removes a 74 ms stall on every additional display and on the
+  Settings preview.
+- Low Power Mode changes apply on the main thread.
+- The release job runs the rendering checks from the release commit instead
+  of from `main`.
+
 ### Fixed
-- Use one vertically centered visible-ink envelope for the whole animation, preserving authored motion without per-frame recentering jumps.
-- Verify the complete loop's visible top/bottom margins from rendered pixels and assert a fixed origin across all frames and wraparound.
+- A failed or empty first frame load is no longer cached for the life of
+  the process.
+- README no longer claims `drawRect:` is allocation free, or that the frame
+  rate depends on AC power.
+
+## [1.7.5] — 2026-09-16
+
+### Fixed
+- One vertical anchor for the whole animation loop, measured from the union
+  of visible ink, so the ghost no longer recenters per frame (PR #22).
+
+## [1.7.4] — 2026-09-16
+
+### Changed
+- README shows the original animated GIF in both GitHub themes (PR #21). No
+  GitHub release was published for this tag. See 1.7.5.
+
+## [1.7.3] — 2026-09-15
+
+### Fixed
+- Vertical centering measured from visible glyphs instead of the text frame
+  (PR #20).
+
+## [1.7.2] — 2026-09-15
+
+### Fixed
+- The release script finds draft releases through the authenticated listing
+  (PR #19).
 
 ## [1.7.1] — 2026-09-15
 
@@ -52,7 +91,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   `NSProcessInfoPowerStateDidChangeNotification`.
 
 ### Removed
-- B5 XCTest harness and B6 `os_signpost` Points-of-Interest tracks.
+- B5 XCTest harness. (This entry once also listed the B6 `os_signpost`
+  tracks. They stayed in and are still on.)
 
 ### Added
 - Real Development section in README; `FRAMES.md` spec.
@@ -76,7 +116,11 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.7.5...HEAD
+[1.7.5]: https://github.com/initor/ghostty-screensaver/compare/v1.7.4...v1.7.5
+[1.7.4]: https://github.com/initor/ghostty-screensaver/compare/v1.7.3...v1.7.4
+[1.7.3]: https://github.com/initor/ghostty-screensaver/compare/v1.7.2...v1.7.3
+[1.7.2]: https://github.com/initor/ghostty-screensaver/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/initor/ghostty-screensaver/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/initor/ghostty-screensaver/releases/tag/v1.7.0
 [1.6.5]: https://github.com/initor/ghostty-screensaver/releases/tag/v1.6.5

@@ -25,7 +25,7 @@
 
 > **Unofficial fan project.** Not affiliated with, endorsed by, or sponsored by [Ghostty](https://ghostty.org/) or Mitchell Hashimoto. The 235 ASCII animation frames are reused from the public [ghostty-org/website](https://github.com/ghostty-org/website) repo under MIT — see [Acknowledgements](#acknowledgements).
 
-A native macOS `.saver` bundle that loops [Ghostty](https://ghostty.org/)'s homepage 235-frame ASCII animation through Core Text. Universal binary, 30 Hz on AC, 15 Hz under Low Power Mode. Pure Objective-C — no Electron, no WebView, no daemons.
+A native macOS `.saver` bundle that loops [Ghostty](https://ghostty.org/)'s homepage 235-frame ASCII animation through Core Text. Universal binary, 30 Hz, or 15 Hz in Low Power Mode. Pure Objective-C — no Electron, no WebView, no daemons.
 
 ## Install
 
@@ -78,11 +78,11 @@ Single universal `.saver` (`ARCHS = arm64 x86_64`, `MACOSX_DEPLOYMENT_TARGET = 1
 
 ## How it works
 
-`GhosttyView` is an `NSScreenSaverView` subclass loaded by macOS's `legacyScreenSaver` host. Each tick it builds a fresh `CTFramesetter` + `CTFrame` from the current pre-attributed frame and releases both before returning — Core Text instead of `NSLayoutManager` because the latter's caches grew unboundedly under per-frame `setAttributedString:` swaps (~1.6 KB/frame, no plateau over 7050 frames on macOS 26). The 235-element `NSAttributedString` array loads once per process via `dispatch_once`, shared across every `NSScreen`, the System Settings preview pane, and view re-instantiations. The view is layer-backed (`wantsLayer = YES`) so the per-tick black background is a `CALayer.backgroundColor` GPU composite, not a CPU `NSRectFill`.
+`GhosttyView` is an `NSScreenSaverView` subclass loaded by macOS's `legacyScreenSaver` host. Each tick it builds a fresh `CTFramesetter` + `CTFrame` from the current pre-attributed frame and releases both before returning — Core Text instead of `NSLayoutManager` because the latter's caches grew unboundedly under per-frame `setAttributedString:` swaps (~1.6 KB/frame, no plateau over 7050 frames on macOS 26). The 235-element `NSAttributedString` array loads once per process, shared across every `NSScreen`, the System Settings preview pane, and view re-instantiations. The view is layer-backed (`wantsLayer = YES`) so the per-tick black background is a `CALayer.backgroundColor` GPU composite, not a CPU `NSRectFill`.
 
-- 30 Hz on AC, 15 Hz in Low Power Mode (via `NSProcessInfoPowerStateDidChangeNotification`).
+- 30 Hz, or 15 Hz in Low Power Mode (via `NSProcessInfoPowerStateDidChangeNotification`).
 - Frame array singleton — multi-display + Settings preview share one ~2.7 MB load.
-- `drawRect:` is allocation-free in steady state; `(usedSize, origin)` is cached per frame index.
+- `drawRect:` builds one `CTFramesetter` and one `CTFrame` per tick and releases both. Placement is cached per bounds, and the whole-cycle ink midpoint is measured once per process.
 - `os_signpost` Points-of-Interest are always on — Instruments-ready, zero cost when detached.
 
 ## FAQ
@@ -101,7 +101,7 @@ Yes. macOS instantiates one `GhosttyView` per active screen; the 235-frame array
 
 > **What's the battery / CPU impact?**
 
-Negligible on Apple Silicon, modest on Intel. The view auto-throttles to 15 Hz under Low Power Mode, uses a layer-backed view so WindowServer composites on the GPU, and `drawRect:` is allocation-free in steady state. To be extra-conservative on battery, toggle Low Power Mode.
+About 9 percent of one core at 30 Hz on an M4 at 1080p, about half that at 15 Hz in Low Power Mode. The view is layer-backed, so WindowServer composites on the GPU. To be extra conservative on battery, toggle Low Power Mode.
 
 > **How do I customize the colors or supply my own ASCII art?**
 
