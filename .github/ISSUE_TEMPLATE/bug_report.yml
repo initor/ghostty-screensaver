@@ -69,7 +69,6 @@ body:
       description: System Settings → Screen Saver → ghostty → Options…
       options:
         - "Classic (default)"
-        - "Catppuccin Latte"
         - "Catppuccin Frappé"
         - "Catppuccin Macchiato"
         - "Catppuccin Mocha"

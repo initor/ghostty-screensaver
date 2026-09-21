@@ -63,8 +63,11 @@ cost 45 MB for 0.1 ms per tick.
 ## Color schemes
 
 The scheme table lives in `ghostty/GhosttyColorScheme.m`. Each row is an
-identifier, a display name, and three sRGB colors: background, body glyphs,
-and the accent glyphs inside `<span class="b">`. The identifier is what
+identifier, a display name, three sRGB colors (background, body glyphs, and
+the accent glyphs inside `<span class="b">`), and four gradient stops. With
+stops, the body is drawn one color per row, top to bottom, interpolated
+between the stops. The formula is in `GhosttyColorScheme.h` and the harness
+recomputes it. All zero stops mean a flat body. The identifier is what
 `ScreenSaverDefaults` stores under the key `ColorScheme` for the module
 `com.initor.ghostty-screensaver`, so it must never change once shipped. A
 missing or unknown value resolves to `classic`.
@@ -79,10 +82,10 @@ To add a scheme:
 4. Add the row to the README table and regenerate `assets/color-schemes.gif`:
    render every frame of each scheme through `drawRect:` at 1040 by 820
    (the ghost fits with no crop), tile them 2 by 2 at 600 px per scheme,
-   and encode every other frame at 15 fps, remapped to an explicit palette
-   of each scheme's three colors plus two midtones, no dithering. Letting
-   the encoder pick a palette merges the accents of the dark flavors.
-   That keeps the file near 3 MB.
+   scale to 800 px, and encode every other frame at 15 fps with one
+   128 color palette taken from a representative frame, no dithering. A
+   palette chosen per frame breaks frame to frame optimization and the
+   file balloons. That keeps the file near 3.4 MB.
 
 Never write `ScreenSaverDefaults` from a test. Outside the sandbox the write
 lands in your own `~/Library/Preferences/ByHost`. The harness applies schemes
