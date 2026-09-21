@@ -11,6 +11,7 @@
 #import "GhosttyFrameLoader.h"
 #import "GhosttyOptionsSheet.h"
 #import <CoreText/CoreText.h>
+#import <QuartzCore/QuartzCore.h>
 #import <os/log.h>
 #import <os/signpost.h>
 
@@ -49,6 +50,18 @@ static os_log_t sPOILog;
 
 // The host does not retain the sheet; this reference keeps it alive.
 @property (nonatomic, strong) GhosttyOptionsSheet *optionsSheet;
+
+// Frame pacing on macOS 14 and later. ScreenSaverView's own NSTimer is
+// not tied to the display and fires with several milliseconds of jitter
+// (measured: sd 3.5 ms, 24 to 42 ms between ticks), so on a 60 Hz panel
+// a frame sits for two refreshes or three, unpredictably. A display link
+// fires on the vsync and preferredFrameRateRange asks for 30 fps, every
+// other refresh on the 60 Hz panel it was measured on (sd 0.02 ms). Other
+// refresh rates are best effort per CADisplayLink.h. The link is created
+// in startAnimation and invalidated in stopAnimation because it retains
+// its target; the invalidate in dealloc is defensive only, since a view
+// with a live link cannot reach dealloc. Older hosts keep the timer.
+@property (nonatomic, strong) CADisplayLink *displayLink API_AVAILABLE(macos(14.0));
 
 @end
 
@@ -108,6 +121,9 @@ static os_log_t sPOILog;
 
 - (void)dealloc
 {
+    if (@available(macOS 14.0, *)) {
+        [self.displayLink invalidate];
+    }
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center removeObserver:self name:NSProcessInfoPowerStateDidChangeNotification object:nil];
     [center removeObserver:self name:GhosttyColorSchemeDidChangeNotification object:nil];
@@ -160,9 +176,19 @@ static os_log_t sPOILog;
 - (void)applyAnimationRateForCurrentPowerState
 {
     BOOL lpm = NSProcessInfo.processInfo.lowPowerModeEnabled;
-    self.animationTimeInterval = lpm
-        ? kGhosttyFrameIntervalLowPower
-        : kGhosttyFrameIntervalNormal;
+    NSTimeInterval interval = lpm ? kGhosttyFrameIntervalLowPower : kGhosttyFrameIntervalNormal;
+    if (@available(macOS 14.0, *)) {
+        if (self.displayLink) {
+            float fps = (float)(1.0 / interval);
+            self.displayLink.preferredFrameRateRange = CAFrameRateRangeMake(fps, fps, fps);
+            // Push the host timer out to once an hour; the display link drives
+            // animateOneFrame. The hourly tick advances one extra frame. There
+            // is no public way to stop the timer while isAnimating stays YES.
+            self.animationTimeInterval = 3600.0;
+            return;
+        }
+    }
+    self.animationTimeInterval = interval;
 }
 
 - (void)ghosttyPowerStateDidChange:(NSNotification *)note
@@ -179,11 +205,44 @@ static os_log_t sPOILog;
 
 #pragma mark - ScreenSaverView Lifecycle
 
-// startAnimation / stopAnimation use ScreenSaverView's defaults. The view
-// is layer-backed and Core Text-driven, so there is no per-instance
-// layout-manager state to tear down between activations — the original
-// teardown in -stopAnimation was the source of the H1 stop→start dead-
-// view bug when the host re-activated the same instance after a sleep.
+// The overrides only manage the display link. Frames are process-shared
+// and the cached placement is keyed on bounds, so nothing needs tearing
+// down between activations; tearing frames down in -stopAnimation was the
+// source of the H1 stop→start dead-view bug when the host re-activated the
+// same instance after a sleep.
+
+- (void)startAnimation
+{
+    [super startAnimation];
+    if (@available(macOS 14.0, *)) {
+        // ScreenSaverView queues its first step as a delayed perform, not
+        // through the timer. With the link delivering that tick too, every
+        // activation would advance two frames in one run-loop pass. This
+        // view schedules no performs of its own, so the cancel is safe.
+        [NSObject cancelPreviousPerformRequestsWithTarget:self];
+        if (!self.displayLink) {
+            self.displayLink = [self displayLinkWithTarget:self
+                                                 selector:@selector(ghosttyDisplayLinkDidFire:)];
+            [self.displayLink addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+        }
+        [self applyAnimationRateForCurrentPowerState];
+    }
+}
+
+- (void)stopAnimation
+{
+    if (@available(macOS 14.0, *)) {
+        [self.displayLink invalidate];
+        self.displayLink = nil;
+    }
+    [super stopAnimation];
+}
+
+- (void)ghosttyDisplayLinkDidFire:(CADisplayLink *)link API_AVAILABLE(macos(14.0))
+{
+    (void)link;
+    [self animateOneFrame];
+}
 
 #pragma mark - Drawing & Animation
 

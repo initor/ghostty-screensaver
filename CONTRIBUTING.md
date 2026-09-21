@@ -57,6 +57,10 @@ cost 45 MB for 0.1 ms per tick.
   the 963 by 779 pt canvas (the Settings preview), the drawing is scaled to
   fit inside an 8 percent margin. Displays that fit the canvas are unchanged.
 - 30 Hz, 15 Hz in Low Power Mode via `NSProcessInfoPowerStateDidChangeNotification`.
+  On macOS 14 and later a `CADisplayLink` paces the ticks to the display's
+  refresh (every other refresh at 60 Hz), created in `startAnimation` and
+  invalidated in `stopAnimation`. The host timer is pushed out to once an
+  hour. Before 14 the host's timer runs as is.
 - `os_signpost` Points of Interest (`FrameLoad`, `DrawFrame`, `Tick`) are
   always on. Instruments picks them up with no build flags.
 
