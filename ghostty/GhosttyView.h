@@ -13,7 +13,9 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// macOS screensaver view that cycles a sequence of pre-rendered ASCII
-/// art frames at 30 FPS. Frames are loaded per color scheme by
+/// art frames at 30 FPS. On macOS 14 and later a display link paces the
+/// frames to the display's refresh; before that ScreenSaverView's timer
+/// does. Frames are loaded per color scheme by
 /// GhosttyFrameLoader (shared across all NSScreen instances and the
 /// System Settings preview pane) and rendered via Core Text into a
 /// layer-backed view. The scheme is read from ScreenSaverDefaults once, at
