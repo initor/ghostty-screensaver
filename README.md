@@ -50,20 +50,19 @@ Releases are not signed with an Apple Developer ID, so Gatekeeper refuses the qu
 
 ## Color schemes
 
-The original look is the default. Four more schemes follow the [Catppuccin](https://catppuccin.com/) palette.
+The original look is the default. Three more follow the [Catppuccin](https://catppuccin.com/) palette. Each uses the flavor's base as the background and its blue as the accent. The body fades from peach through pink and mauve to that blue.
 
 <img
-  alt="The animation looping in Catppuccin Latte, Frappé, Macchiato and Mocha."
+  alt="The animation looping in Classic and in Catppuccin Frappé, Macchiato and Mocha."
   src="assets/color-schemes.gif"
   width="900">
 
-| Scheme | Background | Body | Accent |
+| Scheme | Background | Body, top to bottom | Accent |
 |---|---|---|---|
 | Classic (default) | `#000000` | `#d7d7d7` | `#0000e6` |
-| Catppuccin Latte | `#eff1f5` | `#4c4f69` | `#1e66f5` |
-| Catppuccin Frappé | `#303446` | `#c6d0f5` | `#8caaee` |
-| Catppuccin Macchiato | `#24273a` | `#cad3f5` | `#8aadf4` |
-| Catppuccin Mocha | `#1e1e2e` | `#cdd6f4` | `#89b4fa` |
+| Catppuccin Frappé | `#303446` | `#ef9f76` → `#f4b8e4` → `#ca9ee6` → `#8caaee` | `#8caaee` |
+| Catppuccin Macchiato | `#24273a` | `#f5a97f` → `#f5bde6` → `#c6a0f6` → `#8aadf4` | `#8aadf4` |
+| Catppuccin Mocha | `#1e1e2e` | `#fab387` → `#f5c2e7` → `#cba6f7` → `#89b4fa` | `#89b4fa` |
 
 To pick one:
 
@@ -71,7 +70,7 @@ To pick one:
 2. Click **Options…**.
 3. Choose a scheme and click **OK**. The preview updates as you choose.
 
-The choice is saved per user and per Mac. Latte is a light scheme: the whole screen goes light.
+The choice is saved per user and per Mac.
 
 > On macOS 26, the **Options…** button sometimes does nothing. Quit System Settings, open it again, and click **Options…** once more.
 

@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- The Catppuccin schemes draw the ghost body as a vertical gradient, one
+  color per row from the flavor's peach through pink and mauve to its blue.
+  The accent stays the flavor's blue and the background stays its base.
+  Classic is unchanged, byte for byte.
+
+### Removed
+- `catppuccin-latte`. The one light scheme is gone. A stored
+  `catppuccin-latte` now resolves to `classic`. This is the breaking change
+  behind the 2.0.0 version.
+
+## [1.8.2] — 2026-09-20
+
 ### Fixed
 - The README color scheme GIF kept only one palette for all four tiles, so
   the three dark Catppuccin flavors looked alike. It is now remapped to an
@@ -148,7 +161,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/initor/ghostty-screensaver/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/initor/ghostty-screensaver/compare/v1.7.5...v1.8.0
 [1.7.5]: https://github.com/initor/ghostty-screensaver/compare/v1.7.4...v1.7.5

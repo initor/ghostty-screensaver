@@ -36,6 +36,7 @@ static BOOL sGeometryReady;
 @interface GhosttyFrameLoader ()
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
                                     bodyAttributes:(NSDictionary<NSAttributedStringKey, id> *)bodyAttributes
+                                     rowAttributes:(nullable NSArray<NSDictionary<NSAttributedStringKey, id> *> *)rowAttributes
                                   accentAttributes:(NSDictionary<NSAttributedStringKey, id> *)accentAttributes;
 + (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames;
 @end
@@ -103,6 +104,17 @@ static BOOL sGeometryReady;
     NSDictionary<NSAttributedStringKey, id> *accentAttributes = @{
         (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)scheme.accentColor,
     };
+    // Gradient schemes recolor each row before the accent runs go on top.
+    // One dictionary per row, built once per load.
+    NSMutableArray<NSDictionary<NSAttributedStringKey, id> *> *rowAttributes = nil;
+    if (scheme.hasBodyGradient) {
+        rowAttributes = [NSMutableArray arrayWithCapacity:GhosttyColorSchemeRowCount];
+        for (NSUInteger row = 0; row < GhosttyColorSchemeRowCount; row++) {
+            [rowAttributes addObject:@{
+                (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)[scheme bodyColorForRow:row],
+            }];
+        }
+    }
 
     NSDate *startDate = [NSDate date];
     NSArray<NSString *> *paths = [bundle pathsForResourcesOfType:@"txt" inDirectory:nil];
@@ -144,6 +156,7 @@ static BOOL sGeometryReady;
 
             [loadedFrames addObject:[self attributedFrameFromRawHTML:rawContent
                                                       bodyAttributes:bodyAttributes
+                                                       rowAttributes:rowAttributes
                                                     accentAttributes:accentAttributes]];
         }
     }
@@ -169,6 +182,7 @@ static BOOL sGeometryReady;
 
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
                                     bodyAttributes:(NSDictionary<NSAttributedStringKey, id> *)bodyAttributes
+                                     rowAttributes:(NSArray<NSDictionary<NSAttributedStringKey, id> *> *)rowAttributes
                                   accentAttributes:(NSDictionary<NSAttributedStringKey, id> *)accentAttributes
 {
     // Two passes: strip the tags into one plain string while noting where
@@ -203,6 +217,26 @@ static BOOL sGeometryReady;
 
     NSMutableAttributedString *frame = [[NSMutableAttributedString alloc] initWithString:plain
                                                                               attributes:bodyAttributes];
+
+    // Gradient: one attribute run per row, newline included. Rows beyond
+    // the table (a frame with more lines than expected) reuse the last row.
+    // The accent runs go on afterwards and override where they overlap.
+    if (rowAttributes.count > 0) {
+        NSUInteger length = plain.length;
+        NSUInteger lineStart = 0;
+        NSUInteger row = 0;
+        while (lineStart < length) {
+            NSRange newline = [plain rangeOfString:@"\n"
+                                           options:NSLiteralSearch
+                                             range:NSMakeRange(lineStart, length - lineStart)];
+            NSUInteger lineEnd = (newline.location == NSNotFound) ? length : NSMaxRange(newline);
+            [frame addAttributes:rowAttributes[MIN(row, rowAttributes.count - 1)]
+                           range:NSMakeRange(lineStart, lineEnd - lineStart)];
+            lineStart = lineEnd;
+            row++;
+        }
+    }
+
     const NSRange *run = runs.bytes;
     NSUInteger runCount = runs.length / sizeof(NSRange);
     for (NSUInteger i = 0; i < runCount; i++) {

@@ -81,15 +81,17 @@ See *Color roles and schemes* below.
 
 A frame has two color roles: **body** (all plain text) and **accent** (the
 text inside `<span class="b">`). A color scheme adds a **background** and
-assigns one sRGB color to each role. The loader bakes the two text colors
-into the attributed strings at load time as `CGColor` values under
-`kCTForegroundColorAttributeName`; the view sets the background on its layer.
+assigns one sRGB color to each role. The body may instead be a vertical
+gradient, one color per row interpolated between four stops. The loader
+bakes the text colors into the attributed strings at load time as `CGColor`
+values under `kCTForegroundColorAttributeName`, one run per row for a
+gradient; the view sets the background on its layer.
 
 The schemes are one static table in `ghostty/GhosttyColorScheme.m`:
 
 ```objc
-{ "catppuccin-mocha", "Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x89b4fa },
-//  identifier         display name       background body      accent
+{ "catppuccin-mocha", "Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
+//  identifier         display name       background body      accent    gradient stops, top to bottom (all zero = flat)
 ```
 
 The identifier is stored in `ScreenSaverDefaults` and must never change once
@@ -98,4 +100,5 @@ shipped. To add a scheme, add a row here and the same row to the table in
 asserts the popup order, the display names, and the exact pixel colors.
 
 Adding a second accent role (a new span class) would need a second regex
-group and a fourth color per scheme. Nothing in the corpus uses one today.
+group and one more accent color per scheme. Nothing in the corpus uses one
+today.

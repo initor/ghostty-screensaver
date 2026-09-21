@@ -18,15 +18,40 @@ static NSMutableArray<NSDictionary *> *schemeResults;
 // The harness's own copy of the scheme contract (ghostty/GhosttyColorScheme.m).
 // Ids, popup order, display names and colors are asserted against the bundle,
 // so a drift on either side fails here instead of shipping.
-typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; } SchemeSpec;
+typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; unsigned gradient[4]; } SchemeSpec;
 static const SchemeSpec kSchemes[] = {
-    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6 },
-    { "catppuccin-latte",     "Catppuccin Latte",     0xeff1f5, 0x4c4f69, 0x1e66f5 },
-    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee },
-    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4 },
-    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa },
+    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 } },
+    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee } },
+    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 } },
+    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
 };
 static const NSUInteger kSchemeCount = sizeof(kSchemes) / sizeof(kSchemes[0]);
+static const NSUInteger kRows = 41;
+
+static BOOL HasGradient(const SchemeSpec *s) { return s->gradient[0] || s->gradient[1] || s->gradient[2] || s->gradient[3]; }
+
+// The gradient oracle, recomputed here from the documented formula in
+// GhosttyColorScheme.h, in the same integer arithmetic: R = rows - 1,
+// k = min(2, 3 row / R), n = 3 row - R k, component = (A (R - n) + B n) / R
+// rounded half up.
+static unsigned RowColor(const SchemeSpec *s, NSUInteger row) {
+    if (!HasGradient(s)) return s->body;
+    unsigned span = (unsigned)(kRows - 1);
+    unsigned k = MIN(2u, (unsigned)(3 * row) / span);
+    unsigned n = (unsigned)(3 * row) - span * k;
+    unsigned rgb = 0;
+    for (NSUInteger i = 0; i < 3; i++) {
+        unsigned shift = (unsigned)(16 - 8 * i);
+        unsigned a = (s->gradient[k] >> shift) & 0xff, b = (s->gradient[k + 1] >> shift) & 0xff;
+        unsigned numerator = a * (span - n) + b * n;
+        rgb |= ((2 * numerator + span) / (2 * span)) << shift;
+    }
+    return rgb;
+}
+
+// Bitmap row direction per point of view y, calibrated once in Reference():
+// -1 when moving content up in view space lowers the bitmap row index.
+static CGFloat gRowDirection;
 // The scheme every view created from here on gets, and the background every
 // raster is filled with. The harness never reads or writes ScreenSaverDefaults:
 // outside the sandbox a write would land in the developer's own preferences.
@@ -190,19 +215,21 @@ static NSUInteger PixelDifference(NSBitmapImageRep *a, NSBitmapImageRep *b) {
     return different;
 }
 
-// Pixels whose sRGB value equals `rgb` exactly.
-static NSUInteger ExactPixels(NSBitmapImageRep *rep, unsigned rgb) {
+// Pixels whose sRGB value equals `rgb` exactly, and their mean bitmap row.
+static NSUInteger ExactPixelsMeanY(NSBitmapImageRep *rep, unsigned rgb, double *meanY) {
     unsigned char want[3] = { (rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff };
-    NSUInteger count = 0;
+    NSUInteger count = 0; double sumY = 0;
     for (NSInteger y = 0; y < rep.pixelsHigh; y++) {
         unsigned char *row = rep.bitmapData + y * rep.bytesPerRow;
         for (NSInteger x = 0; x < rep.pixelsWide; x++) {
             unsigned char *p = row + 4 * x;
-            if (p[0] == want[0] && p[1] == want[1] && p[2] == want[2]) count++;
+            if (p[0] == want[0] && p[1] == want[1] && p[2] == want[2]) { count++; sumY += y; }
         }
     }
+    if (meanY) *meanY = count ? sumY / count : 0;
     return count;
 }
+static NSUInteger ExactPixels(NSBitmapImageRep *rep, unsigned rgb) { return ExactPixelsMeanY(rep, rgb, NULL); }
 
 static BOOL LayerBackgroundIs(ScreenSaverView *view, unsigned rgb) {
     CGColorRef color = view.layer.backgroundColor;
@@ -276,13 +303,14 @@ static CTFrameRef Reference(NSAttributedString *text, NSRect bounds, CGFloat sca
           [label stringByAppendingString:@" generous reference has unclipped ink"]);
     CGFloat centerPixel = ([ink[@"top"] doubleValue] + [ink[@"bottom"] doubleValue] + 1) / 2;
     // Calibrate raw bitmap row orientation rather than assuming top-down storage.
-    static CGFloat rowDirection;
+    CGFloat rowDirection = gRowDirection;
     if (!rowDirection) {
         CGPathRef shiftedPath = CGPathCreateWithRect(NSMakeRect(64, 65, size.width, size.height), NULL);
         CTFrameRef shifted = CTFramesetterCreateFrame(fs, CFRangeMake(0, text.length), shiftedPath, NULL);
         NSDictionary *shiftInk = Ink(Render(probe, scale, shifted, 1));
         CGFloat shiftCenter = ([shiftInk[@"top"] doubleValue] + [shiftInk[@"bottom"] doubleValue] + 1) / 2;
         rowDirection = (shiftCenter - centerPixel) / scale;
+        gRowDirection = rowDirection;
         Check(fabs(fabs(rowDirection) - 1) < 0.001, @"bitmap row orientation calibrates to one point");
         CFRelease(shifted); CGPathRelease(shiftedPath);
     }
@@ -471,7 +499,40 @@ static void TestSchemeColors(void) {
             unsigned char *corner = rep.bitmapData;
             Check(corner[0] == ((gScheme->bg >> 16) & 0xff) && corner[1] == ((gScheme->bg >> 8) & 0xff) &&
                   corner[2] == (gScheme->bg & 0xff), [label stringByAppendingString:@" corner pixel is the background"]);
-            NSUInteger body = ExactPixels(rep, gScheme->body), accent = ExactPixels(rep, gScheme->accent);
+            // Body pixels: the flat color, or the sum over the gradient rows.
+            // Each row's exact pixels must also sit in that row's band of the
+            // bitmap, so a reversed or shifted gradient fails here and not
+            // only in the attribute check. The bottom row's color equals the
+            // accent in every flavor, so the halo is never gradient evidence.
+            NSUInteger body = 0, rowsPresent = 0;
+            if (HasGradient(gScheme)) {
+                NSSize canvas = [[view valueForKey:@"cachedDrawSize"] sizeValue];
+                NSPoint origin = [[view valueForKey:@"cachedDrawOrigin"] pointValue];
+                double lineHeight = canvas.height / kRows;
+                for (NSUInteger row = 0; row < kRows; row++) {
+                    unsigned color = RowColor(gScheme, row);
+                    if (color == gScheme->accent) continue;
+                    double meanY = 0;
+                    NSUInteger n = ExactPixelsMeanY(rep, color, &meanY);
+                    body += n;
+                    if (n < 50) continue;
+                    rowsPresent++;
+                    double rowCenter = origin.y + canvas.height - ((double)row + 0.5) * lineHeight;
+                    double expectedY = rep.pixelsHigh / 2.0 + gRowDirection * (rowCenter - NSMidY(view.bounds));
+                    Check(fabs(meanY - expectedY) <= lineHeight / 2,
+                          [NSString stringWithFormat:@"%@ row %lu color #%06x sits in its band (mean y %.1f, expected %.1f)",
+                           label, (unsigned long)row, color, meanY, expectedY]);
+                }
+                // Measured at 1x on frames 0 and 117: 27 (Frappé), 23 (Macchiato), 25 (Mocha).
+                // Rows fall under 50 exact pixels only through antialiasing of sparse rows.
+                Check(rowsPresent >= 20, [NSString stringWithFormat:@"%@ %lu of %lu gradient rows draw at least 50 exact pixels in their band",
+                                          label, (unsigned long)rowsPresent, (unsigned long)kRows]);
+                Check(ExactPixels(rep, gScheme->body) == 0,
+                      [label stringByAppendingString:@" gradient scheme draws no pixel of its flat body color"]);
+            } else {
+                body = ExactPixels(rep, gScheme->body);
+            }
+            NSUInteger accent = ExactPixels(rep, gScheme->accent);
             Check(body >= 10000, [NSString stringWithFormat:@"%@ exact body pixels %lu >= 10000", label, (unsigned long)body]);
             Check(accent >= 1000, [NSString stringWithFormat:@"%@ exact accent pixels %lu >= 1000", label, (unsigned long)accent]);
             Check(body > accent, [NSString stringWithFormat:@"%@ body pixels %lu outnumber accent pixels %lu", label,
@@ -479,8 +540,8 @@ static void TestSchemeColors(void) {
             TestFrameAttributes([view valueForKey:@"frames"][index.unsignedIntegerValue], label);
             for (NSUInteger o = 0; o < kSchemeCount; o++) {
                 if (o == s) continue;
-                NSUInteger foreign = ExactPixels(rep, kSchemes[o].body) + ExactPixels(rep, kSchemes[o].accent);
-                Check(foreign == 0, [NSString stringWithFormat:@"%@ draws %lu pixels of %s", label,
+                NSUInteger foreign = ExactPixels(rep, kSchemes[o].accent);
+                Check(foreign == 0, [NSString stringWithFormat:@"%@ draws %lu pixels of %s accent", label,
                                      (unsigned long)foreign, kSchemes[o].identifier]);
             }
             if (index.intValue == 117) SavePNG(rep, [name stringByAppendingString:@"-117-1x.png"]);
@@ -505,14 +566,19 @@ static BOOL AttributesCarry(NSDictionary *attrs, unsigned rgb) {
 }
 
 static void TestFrameAttributes(NSAttributedString *frame, NSString *label) {
-    Check(AttributesCarry([frame attributesAtIndex:0 effectiveRange:NULL], gScheme->body),
-          [label stringByAppendingString:@" body run carries the scheme body CGColor under the Core Text key"]);
+    Check(AttributesCarry([frame attributesAtIndex:0 effectiveRange:NULL], RowColor(gScheme, 0)),
+          [label stringByAppendingString:@" first run carries the row 0 body CGColor under the Core Text key"]);
+    // Every run is the accent or the body color of the row it sits on.
+    NSString *text = frame.string;
     __block NSUInteger accentRuns = 0, otherRuns = 0;
     [frame enumerateAttributesInRange:NSMakeRange(0, frame.length) options:0
                            usingBlock:^(NSDictionary *attrs, NSRange range, BOOL *stop) {
-        (void)range; (void)stop;
-        if (AttributesCarry(attrs, gScheme->body)) return;
-        if (AttributesCarry(attrs, gScheme->accent)) accentRuns++; else otherRuns++;
+        (void)stop;
+        NSUInteger row = [[text substringToIndex:range.location] componentsSeparatedByString:@"\n"].count - 1;
+        // Accent first: the bottom row's gradient color equals the accent.
+        if (AttributesCarry(attrs, gScheme->accent)) { accentRuns++; return; }
+        if (AttributesCarry(attrs, RowColor(gScheme, MIN(row, kRows - 1)))) return;
+        otherRuns++;
     }];
     Check(accentRuns > 0 && otherRuns == 0,
           [NSString stringWithFormat:@"%@ %lu accent runs carry the accent CGColor, %lu runs carry something else",
@@ -534,7 +600,7 @@ static void TestSchemeLookup(void) {
     }
     NSDictionary<NSString *, NSString *> *cases = @{
         @"": @"classic", @"   ": @"classic", @"not-a-scheme": @"classic", @"CLASSIC": @"classic",
-        @"  Catppuccin-Mocha \n": @"catppuccin-mocha", @"catppuccin-latte": @"catppuccin-latte",
+        @"  Catppuccin-Mocha \n": @"catppuccin-mocha", @"catppuccin-latte": @"classic",
     };
     for (NSString *input in cases) {
         id scheme = LookupScheme(input);
