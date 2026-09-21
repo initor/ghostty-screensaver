@@ -7,6 +7,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Changed
+- Frames are paced to the display's refresh on macOS 14 and later. The
+  host's timer fired every 33 ms with several milliseconds of jitter, so on
+  a 60 Hz panel a frame stayed for two refreshes or three at random. A
+  display link now advances the animation on every other refresh of a
+  60 Hz panel. The tick interval used to range from 24.2 to 42.4 ms. It now
+  ranges from 33.0 to 33.7 ms, at the same 30 fps and the same CPU. macOS
+  12 and 13 are paced by the host timer as before.
+
+## [2.0.0] — 2026-09-21
+
+### Changed
 - The Catppuccin schemes draw the ghost body as a vertical gradient, one
   color per row from the flavor's peach through pink and mauve to its blue.
   The accent stays the flavor's blue and the background stays its base.
@@ -161,7 +172,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...v2.0.0
 [1.8.2]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/initor/ghostty-screensaver/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/initor/ghostty-screensaver/compare/v1.7.5...v1.8.0
