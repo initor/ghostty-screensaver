@@ -21,10 +21,15 @@ NS_ASSUME_NONNULL_BEGIN
 FOUNDATION_EXPORT NSNotificationName const GhosttyColorSchemeDidChangeNotification;
 FOUNDATION_EXPORT NSString * const GhosttyColorSchemeIdentifierKey;
 
-/// A color scheme is three opaque sRGB colors: the background, the body
-/// glyphs, and the accent glyphs inside `<span class="b">…</span>`. The built-in
-/// schemes live in a static table in popup order. The identifier is the
-/// value stored in ScreenSaverDefaults and must never change once shipped.
+/// Rows in every bundled frame. Body gradients are precomputed per row.
+FOUNDATION_EXPORT const NSUInteger GhosttyColorSchemeRowCount;
+
+/// A color scheme is a background, a body color for the plain glyphs, and an
+/// accent color for the glyphs inside `<span class="b">…</span>`, all opaque
+/// sRGB. A scheme may replace the flat body color with a vertical gradient:
+/// four stops interpolated by row, top to bottom. The built-in schemes live
+/// in a static table in popup order. The identifier is the value stored in
+/// ScreenSaverDefaults and must never change once shipped.
 @interface GhosttyColorScheme : NSObject
 
 // Instances come from the table only. A plain -init would carry NULL colors.
@@ -34,8 +39,25 @@ FOUNDATION_EXPORT NSString * const GhosttyColorSchemeIdentifierKey;
 @property (nonatomic, readonly, copy) NSString *identifier;
 @property (nonatomic, readonly, copy) NSString *displayName;
 @property (nonatomic, readonly) CGColorRef backgroundColor;
+/// The flat body color. On a gradient scheme it is never drawn; use
+/// bodyColorForRow: for the color of a row.
 @property (nonatomic, readonly) CGColorRef bodyColor;
 @property (nonatomic, readonly) CGColorRef accentColor;
+
+/// YES when the body is drawn as a per-row gradient instead of bodyColor.
+@property (nonatomic, readonly) BOOL hasBodyGradient;
+
+/// The body color for one row, 0 at the top. Flat schemes return bodyColor
+/// for every row. Rows past GhosttyColorSchemeRowCount use the last row.
+///
+/// Gradient rows are interpolated in sRGB between four stops, in integer
+/// arithmetic so every architecture produces the same 8-bit value. With
+/// R = rows - 1, k = min(2, 3 * row / R) (integer division) and
+/// n = 3 * row - R * k, each 8-bit component is
+/// (A * (R - n) + B * n) / R rounded half up, where A is the component of
+/// stops[k] and B of stops[k + 1]. The rendering harness recomputes this to
+/// check the bundle.
+- (CGColorRef)bodyColorForRow:(NSUInteger)row;
 
 /// All schemes in table (popup) order. The first row is the fallback.
 + (NSArray<GhosttyColorScheme *> *)allSchemes;
