@@ -61,6 +61,13 @@ cost 45 MB for 0.1 ms per tick.
   refresh (every other refresh at 60 Hz), created in `startAnimation` and
   invalidated in `stopAnimation`. The host timer is pushed out to once an
   hour. Before 14 the host's timer runs as is.
+- On macOS 14 to 26 the host process stays resident, starts a new view per
+  activation and never stops the old one. A full-screen view that starts,
+  or lands in a window, retires the older full-screen view on the same
+  screen: hidden, timer and display link stopped, no drawing. A restarted
+  view takes over again. Preview-sized, detached and off-screen views are
+  left alone. `tests/render_bundle.m` drives this with windows that are
+  never shown.
 - `os_signpost` Points of Interest (`FrameLoad`, `DrawFrame`, `Tick`) are
   always on. Instruments picks them up with no build flags.
 

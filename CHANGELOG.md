@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- On macOS 14 to 26 the screen saver host stays resident, starts a new view
+  on every activation and never stops the old one, which kept drawing at
+  30 Hz in its old window. CPU climbed with every activation, to 94 percent
+  on three displays (issue #6). A new full-screen view now retires the older
+  one on its screen: hidden, stopped, drawing nothing. Six activations in
+  one process used 29 percent of one core before and 10 after, with the
+  footprint flat instead of 3 MB more per activation and display.
+
+## [2.1.0] — 2026-09-21
+
 ### Changed
 - Frames are paced to the display's refresh on macOS 14 and later. The
   host's timer fired every 33 ms with several milliseconds of jitter, so on
@@ -172,7 +183,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...v2.0.0
 [1.8.2]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/initor/ghostty-screensaver/compare/v1.8.0...v1.8.1
