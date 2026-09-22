@@ -243,6 +243,9 @@ jobs:
 
           1. Download `ghostty.saver.zip` below and unzip
           2. Double-click `ghostty.saver` to install
+          3. Select **ghostty** in the list
+
+          Full steps, updating and troubleshooting: https://github.com/initor/ghostty-screensaver#install
 
           ---
           NOTES
@@ -251,16 +254,15 @@ jobs:
           ## Installation
 
           1. Download `ghostty.saver.zip` below and unzip
-          2. **Remove the quarantine flag** (required — macOS will say the file is "damaged" without this):
+          2. **Clear the download flag** (required, otherwise macOS refuses to load it when you select it in the list, usually saying the file is "damaged"):
              ```
-             xattr -r -d com.apple.quarantine ~/Downloads/ghostty.saver
+             xattr -d -r com.apple.quarantine ~/Downloads/ghostty.saver
              ```
              Adjust the path if you unzipped it somewhere other than `~/Downloads`.
           3. Double-click `ghostty.saver` to install
+          4. Select **ghostty** in the list
 
-          > **Why?** This build is unsigned (no Apple Developer certificate). macOS blocks
-          > unsigned downloads with a misleading "damaged" error. The command above removes
-          > the quarantine flag so macOS allows installation.
+          Full steps, updating and troubleshooting: https://github.com/initor/ghostty-screensaver#install
 
           ---
           NOTES

@@ -11,6 +11,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   or workflows skip CI and no longer publish a release. Pull requests still
   run CI on every change, and CI now verifies the ad hoc seal on the built
   bundle.
+- README install steps put the quarantine command before the double-click
+  and say where the refusal appears, name the Screen Saver pane on macOS 12,
+  13 to 15 and 26, and add update, click-only uninstall, "it never starts"
+  and bug report guidance. The release notes and the bug template follow
+  the same steps.
 
 ## [2.1.1] — 2026-09-22
 

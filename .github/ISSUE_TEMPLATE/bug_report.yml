@@ -22,7 +22,7 @@ body:
     attributes:
       label: ghostty-screensaver version
       description: From the GitHub Releases page, or `defaults read ~/Library/Screen\ Savers/ghostty.saver/Contents/Info CFBundleShortVersionString`.
-      placeholder: e.g. v1.7.0 or "built from commit abc1234"
+      placeholder: e.g. v2.1.1 or "built from commit abc1234"
     validations:
       required: true
 
@@ -66,7 +66,7 @@ body:
     id: scheme
     attributes:
       label: Color scheme
-      description: System Settings → Screen Saver → ghostty → Options…
+      description: Options… for ghostty in the Screen Saver pane (the README says where the pane is on your macOS version).
       options:
         - "Classic (default)"
         - "Catppuccin Frappé"
@@ -80,7 +80,7 @@ body:
     id: displays
     attributes:
       label: Display setup
-      placeholder: e.g. "single internal", "internal + 1 external 4K", "3-display"
+      placeholder: e.g. "single internal 120 Hz", "internal + 1 external 4K 60 Hz", "external 144 Hz"
     validations:
       required: false
 
@@ -98,8 +98,8 @@ body:
       label: Steps to reproduce
       placeholder: |
         1. Install vX.Y.Z from Releases
-        2. Open System Settings → Screen Saver
-        3. Select Ghostty Screensaver
+        2. Open the Screen Saver pane (see the README)
+        3. Select ghostty
         4. ...
     validations:
       required: true
