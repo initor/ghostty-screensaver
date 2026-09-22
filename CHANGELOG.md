@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.1.1] — 2026-09-22
+
 ### Fixed
 - On macOS 14 to 26 the screen saver host stays resident, starts a new view
   on every activation and never stops the old one, which kept drawing at
@@ -183,7 +185,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...v2.0.0
 [1.8.2]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...v1.8.2
