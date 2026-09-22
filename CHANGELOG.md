@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Pushes to `main` that change only documentation, assets, issue templates
+  or workflows skip CI and no longer publish a release. Pull requests still
+  run CI on every change, and CI now verifies the ad hoc seal on the built
+  bundle.
+- README install steps put the quarantine command before the double-click
+  and say where the refusal appears, name the Screen Saver pane on macOS 12,
+  13 to 15 and 26, and add update, click-only uninstall, "it never starts"
+  and bug report guidance. The release notes and the bug template follow
+  the same steps.
+
+## [2.1.1] — 2026-09-22
+
 ### Fixed
 - On macOS 14 to 26 the screen saver host stays resident, starts a new view
   on every activation and never stops the old one, which kept drawing at
@@ -183,7 +196,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...HEAD
+[2.1.1]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...v2.0.0
 [1.8.2]: https://github.com/initor/ghostty-screensaver/compare/v1.8.1...v1.8.2

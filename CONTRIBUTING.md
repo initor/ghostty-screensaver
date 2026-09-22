@@ -23,7 +23,7 @@ open ghostty.xcodeproj   # Xcode 16.2 or later
 <kbd>⌘ B</kbd> builds `ghostty.saver`. A `.saver` has no host executable to
 run from Xcode. To try it in the real host, copy the bundle into
 `~/Library/Screen Savers/`, run `killall legacyScreenSaver`, and open
-**System Settings → Screen Saver**.
+the Screen Saver pane in System Settings.
 
 CI and the release job run the rendering checks against a built bundle:
 
@@ -128,15 +128,20 @@ log stream --predicate 'subsystem == "com.initor.ghostty-screensaver"' --info
 
 The resolved scheme is logged at default level on every view creation, so it
 also shows in `log show`. Loader timings and view init are info level and
-need `log stream`. Per draw timing exists only as the `DrawFrame` signpost.
-Read it in Instruments or with `log stream --signpost`.
+need `log stream`. Per draw timing and the per tick cadence exist only as
+the `DrawFrame` and `Tick` signposts. Read them in Instruments or with
+`/usr/bin/log stream --signpost --predicate 'subsystem == "com.initor.ghostty-screensaver"'`.
+Tick intervals should be even: about 33 ms on a 60, 90 or 120 Hz panel
+(measured on 60 Hz), 67 ms in Low Power Mode.
 
 ## Releasing
 
-Every push to `main` that passes CI publishes the next patch release
-automatically, pinned to the commit CI checked. PR builds and failed runs
-never publish. Rerunning CI for a released commit does not create another
-version.
+Every push to `main` that changes code and passes CI publishes the next
+patch release automatically, pinned to the commit CI checked. Pushes that
+change only documentation, assets, issue templates or workflows skip CI and
+never release, so a manual tag must point at a commit that changes code.
+PR builds and failed runs never publish. Rerunning CI for a released commit
+does not create another version.
 
 For a minor or major version, the tag has to reach `origin` together with the
 merge commit, or the automation allocates a patch tag first:

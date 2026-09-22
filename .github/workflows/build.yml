@@ -3,6 +3,16 @@ name: CI
 on:
   push:
     branches: [main]
+    # A push that changes only docs, assets, issue templates or workflows
+    # skips CI. The Release workflow runs off a successful CI run, so such
+    # a push never mints a release for an unchanged binary. Pull requests
+    # always run.
+    paths-ignore:
+      - "**.md"
+      - "assets/**"
+      - "LICENSE"
+      - ".github/ISSUE_TEMPLATE/**"
+      - ".github/workflows/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -34,6 +44,7 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             CODE_SIGNING_ALLOWED=NO
           codesign -s - --force ./build/Build/Products/Release/ghostty.saver
+          codesign --verify --strict --verbose=2 ./build/Build/Products/Release/ghostty.saver
           lipo ./build/Build/Products/Release/ghostty.saver/Contents/MacOS/ghostty -verify_arch arm64 x86_64
 
       - name: Verify rendered centering
