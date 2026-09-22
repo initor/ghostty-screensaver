@@ -89,6 +89,10 @@ For an install under `/Library/Screen Savers/` (all users), use `sudo` and that 
 
 `legacyScreenSaver` caches `.saver` bundles. Run `killall legacyScreenSaver` (or reboot) and open System Settings again.
 
+> **`legacyScreenSaver (Wallpaper)` uses more CPU after every activation.**
+
+macOS 14 to 26 keep that host resident and never stop old views. Fixed in 2.1.1: the newest view on a screen is the only one drawing. On older builds, `killall legacyScreenSaver` clears it for a while.
+
 > **Does it work on several displays?**
 
 Yes. Every display animates independently at the same rate. The frames load once per process and are shared.

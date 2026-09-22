@@ -28,6 +28,13 @@ static os_log_t sLog;
 // Always-on signpost log on the Points-of-Interest category. Auto-discovered
 // by Instruments and zero-cost when no client is attached.
 static os_log_t sPOILog;
+// Every view instance in this process, weakly. On macOS 14 to 26 the host
+// process stays resident and creates a new view per activation without
+// stopping or releasing the old one, which then keeps drawing at 30 Hz in
+// its old window. Three monitors and four activations made twelve views
+// drawing at once (issue #6). A new full-screen view on a screen retires
+// the older full-screen view on that screen.
+static NSHashTable<GhosttyView *> *sLiveViews;
 
 @interface GhosttyView ()
 
@@ -51,6 +58,12 @@ static os_log_t sPOILog;
 // The host does not retain the sheet; this reference keeps it alive.
 @property (nonatomic, strong) GhosttyOptionsSheet *optionsSheet;
 
+// Set when a newer full-screen view starts on this view's screen, or when
+// the host takes this view out of its window. A retired view is hidden and
+// neither advances nor draws. startAnimation clears it: the most recently
+// started view on a screen is the one that draws.
+@property (nonatomic, assign) BOOL retired;
+
 // Frame pacing on macOS 14 and later. ScreenSaverView's own NSTimer is
 // not tied to the display and fires with several milliseconds of jitter
 // (measured: sd 3.5 ms, 24 to 42 ms between ticks), so on a 60 Hz panel
@@ -72,6 +85,7 @@ static os_log_t sPOILog;
     if (self == [GhosttyView class]) {
         sLog = os_log_create("com.initor.ghostty-screensaver", "View");
         sPOILog = os_log_create("com.initor.ghostty-screensaver", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+        sLiveViews = [NSHashTable weakObjectsHashTable];
     }
 }
 
@@ -214,6 +228,11 @@ static os_log_t sPOILog;
 - (void)startAnimation
 {
     [super startAnimation];
+    if (self.retired) {
+        self.retired = NO;
+        self.hidden = NO;
+    }
+    [self retireStaleViewsOnThisScreen];
     if (@available(macOS 14.0, *)) {
         // ScreenSaverView queues its first step as a delayed perform, not
         // through the timer. With the link delivering that tick too, every
@@ -244,6 +263,61 @@ static os_log_t sPOILog;
     [self animateOneFrame];
 }
 
+#pragma mark - Stale instances
+
+// Only full-screen instances take part: the System Settings preview and
+// the 0×0 instance macOS 26 creates keep their size and are left alone, and
+// so are detached views (no window, no screen). Siblings of one activation
+// sit on different screens and never retire each other.
+- (BOOL)coversItsScreen
+{
+    NSScreen *screen = self.window.screen;
+    return screen != nil && NSEqualSizes(self.frame.size, screen.frame.size);
+}
+
+// Runs when this view starts and when it lands in a window, whichever the
+// host does last. Screens are compared by frame: two screens never share
+// one, and it does not depend on NSScreen handing out the same object.
+- (void)retireStaleViewsOnThisScreen
+{
+    if ([self coversItsScreen]) {
+        NSRect screenFrame = self.window.screen.frame;
+        for (GhosttyView *other in [sLiveViews allObjects]) {
+            if (other != self && !other.retired && [other coversItsScreen] &&
+                NSEqualRects(other.window.screen.frame, screenFrame)) {
+                [other retire];
+            }
+        }
+    }
+    [sLiveViews addObject:self];
+}
+
+- (void)retire
+{
+    self.retired = YES;
+    os_log(sLog, "Retiring a view superseded on its screen");
+    // Hidden, AppKit skips its display and releases its backing store
+    // (3 MB per view at 1080p). stopAnimation stops the host timer and
+    // invalidates the display link. The host may call stopAnimation again
+    // later; that is harmless.
+    self.hidden = YES;
+    [self stopAnimation];
+}
+
+- (void)viewDidMoveToWindow
+{
+    [super viewDidMoveToWindow];
+    if (self.window != nil) {
+        if (!self.retired) {
+            [self retireStaleViewsOnThisScreen];
+        }
+    } else if (self.isAnimating && !self.retired) {
+        // The host took this view out of its window without stopping it.
+        // The timer would keep ticking for nothing.
+        [self retire];
+    }
+}
+
 #pragma mark - Drawing & Animation
 
 - (void)drawRect:(NSRect)rect
@@ -256,8 +330,8 @@ static os_log_t sPOILog;
     CGRect bounds = self.bounds;
     CGSize canvas = [GhosttyFrameLoader canvasSize];
     // Empty bounds cover the 0×0 preview instance macOS 26 creates; an
-    // empty canvas means no frames loaded.
-    if (self.frames.count == 0 || NSIsEmptyRect(bounds) ||
+    // empty canvas means no frames loaded; a retired view is superseded.
+    if (self.retired || self.frames.count == 0 || NSIsEmptyRect(bounds) ||
         canvas.width <= 0 || canvas.height <= 0) {
         os_signpost_interval_end(sPOILog, spid, "DrawFrame", "empty");
         return;
@@ -330,7 +404,7 @@ static os_log_t sPOILog;
 
 - (void)animateOneFrame
 {
-    if (self.frames.count == 0) {
+    if (self.retired || self.frames.count == 0) {
         return;
     }
     self.currentFrameIndex = (self.currentFrameIndex + 1) % (NSInteger)self.frames.count;

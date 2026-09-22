@@ -661,6 +661,76 @@ static void TestOptionsSheet(void) {
     Check(FindSubview(window.contentView, NSButton.class, @"OK") != nil, @"sheet: OK button");
 }
 
+// On macOS 14 to 26 the host stays resident, starts a new view on every
+// activation and never stops the old one (issue #6). The newest full-screen
+// view on a screen must be the only one drawing, whichever of "start" and
+// "add to a window" the host does last. Smaller views, views on no screen
+// and detached views take no part. A restarted view takes over again. The
+// windows are never shown.
+static void TestSupersededViews(void) {
+    NSScreen *screen = NSScreen.mainScreen;
+    Check(screen != nil, @"stale: a screen to place windows on");
+    if (!screen) return;
+    SelectScheme("classic");
+    NSRect full = screen.frame;
+    NSMutableArray<NSWindow *> *windows = [NSMutableArray array];
+    void (^place)(ScreenSaverView *, NSRect) = ^(ScreenSaverView *view, NSRect frame) {
+        NSWindow *window = [[NSWindow alloc] initWithContentRect:frame styleMask:NSWindowStyleMaskBorderless
+                                                         backing:NSBackingStoreBuffered defer:NO];
+        window.releasedWhenClosed = NO;
+        [windows addObject:window];
+        [window.contentView addSubview:view];
+    };
+    BOOL (^retired)(ScreenSaverView *) = ^BOOL(ScreenSaverView *view) {
+        return [[view valueForKey:@"retired"] boolValue];
+    };
+    BOOL (^draws)(ScreenSaverView *) = ^BOOL(ScreenSaverView *view) {
+        NSBitmapImageRep *rep = Render(view, 1, NULL, 1);
+        return ExactPixels(rep, gScheme->bg) < (NSUInteger)(rep.pixelsWide * rep.pixelsHigh);
+    };
+    ScreenSaverView *first = NewView(full, NO);
+    place(first, full);
+    [first startAnimation];
+    Check(!retired(first) && first.isAnimating && draws(first), @"stale: the first full-screen view draws");
+
+    ScreenSaverView *second = NewView(full, NO);
+    place(second, full);
+    [second startAnimation];
+    Check(retired(first) && !first.isAnimating && first.isHidden && !draws(first),
+          @"stale: a newer full-screen view retires the older one on its screen");
+    Check(!retired(second) && second.isAnimating && draws(second), @"stale: the newer view draws");
+
+    ScreenSaverView *small = NewView(NSMakeRect(0, 0, 800, 600), NO);
+    place(small, NSMakeRect(full.origin.x, full.origin.y, 800, 600));
+    [small startAnimation];
+    Check(!retired(small) && !retired(second), @"stale: a smaller view neither retires nor is retired");
+
+    ScreenSaverView *offscreen = NewView(full, NO);
+    place(offscreen, NSOffsetRect(full, 0, -4 * full.size.height));
+    [offscreen startAnimation];
+    Check(!retired(offscreen) && !retired(second), @"stale: a view on no screen neither retires nor is retired");
+
+    ScreenSaverView *late = NewView(full, NO);
+    [late startAnimation];
+    Check(!retired(second) && !retired(late), @"stale: a view started outside any window retires nothing");
+    place(late, full);
+    Check(retired(second) && !retired(late) && late.isAnimating,
+          @"stale: the same view retires the older one once it lands in a window");
+
+    [first startAnimation];
+    Check(!retired(first) && !first.isHidden && first.isAnimating && draws(first) && retired(late),
+          @"stale: restarting a retired view makes it the live one");
+
+    [first removeFromSuperview];
+    Check(retired(first) && !first.isAnimating && retired(late),
+          @"stale: a view taken out of its window stops, and nothing resumes on its own");
+
+    [first stopAnimation];
+    Check(retired(first) && !first.isAnimating, @"stale: a second stopAnimation is harmless");
+    for (ScreenSaverView *view in @[second, small, offscreen, late]) [view stopAnimation];
+    for (NSWindow *window in windows) [window close];
+}
+
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
         if (argc != 3) {
@@ -734,6 +804,7 @@ int main(int argc, const char *argv[]) {
             TestSchemeLookup();
             TestSchemeColors();
             TestOptionsSheet();
+            TestSupersededViews();
             ScreenSaverView *view = NewView(NSMakeRect(0, 0, 1512, 982), NO);
             if ([[view valueForKey:@"frames"] count] == 235) {
                 TestCycle(view, 2, @"retina", samples);
