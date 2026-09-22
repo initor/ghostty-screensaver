@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Pushes to `main` that change only documentation, assets, issue templates
+  or workflows skip CI and no longer publish a release. Pull requests still
+  run CI on every change, and CI now verifies the ad hoc seal on the built
+  bundle.
+
 ## [2.1.1] — 2026-09-22
 
 ### Fixed
