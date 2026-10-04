@@ -6,6 +6,24 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-10-04
+
+### Changed
+- Abridge follows the typography of abridge.com instead of its dark theme:
+  near-black ink (`#242220`) on warm paper (`#FBF9F6`), the red halo
+  (`#EA2C00`), and SF Mono Light instead of Menlo. It is the one light
+  scheme. The stored id is still `abridge`, so a saved choice picks up the
+  new look.
+
+### Added
+- A scheme names its typeface: Menlo 16 pt, or the system monospaced face
+  at Light weight. Every face sits on Menlo's grid, the same advance and
+  line height, so the ghost keeps its proportions. Classic and the
+  Catppuccin flavors stay on Menlo and draw exactly what 2.2.0 drew.
+- Rendering checks for the typeface of every run, a full cycle of Abridge
+  at 1x and at 2x, and an exact check that each typeface anchors on its
+  own ink.
+
 ## [2.2.0] — 2026-10-04
 
 ### Added
@@ -216,7 +234,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/initor/ghostty-screensaver/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...v2.1.0

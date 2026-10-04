@@ -75,10 +75,13 @@ cost 45 MB for 0.1 ms per tick.
 
 The scheme table lives in `ghostty/GhosttyColorScheme.m`. Each row is an
 identifier, a display name, three sRGB colors (background, body glyphs, and
-the accent glyphs inside `<span class="b">`), and four gradient stops. With
-stops, the body is drawn one color per row, top to bottom, interpolated
-between the stops. The formula is in `GhosttyColorScheme.h` and the harness
-recomputes it. All zero stops mean a flat body. The identifier is what
+the accent glyphs inside `<span class="b">`), four gradient stops, and a
+typeface. With stops, the body is drawn one color per row, top to bottom,
+interpolated between the stops. The formula is in `GhosttyColorScheme.h` and
+the harness recomputes it. All zero stops mean a flat body. The typeface is
+Menlo 16 pt, or the system monospaced face (SF Mono) at Light weight. The
+loader sets every face on Menlo's grid, the same advance and line height,
+so the ghost keeps its proportions and the canvas does not change. The identifier is what
 `ScreenSaverDefaults` stores under the key `ColorScheme` for the module
 `com.initor.ghostty-screensaver`, so it must never change once shipped. A
 missing or unknown value resolves to `classic`.
@@ -97,9 +100,10 @@ To add a scheme:
 5. Name the scheme in the README's Color schemes section and regenerate
    `assets/color-schemes.gif`: render every frame of each scheme except
    Classic (the GIF at the top of the README shows it) through `drawRect:`
-   at 1040 by 820 (the ghost fits with no crop), tile them at 600 px per
-   scheme in popup order, scale to 800 px, and encode every other frame at
-   15 fps with one 128 color palette taken from a representative frame, no
+   at 1040 by 820 points and 2x scale (the ghost fits with no crop), tile
+   them at 600 px per scheme in popup order with each label in the scheme's
+   own text color, scale to 800 px, and encode every other frame at 15 fps
+   with one 128 color palette taken from a representative frame, no
    dithering. A palette chosen per frame breaks frame to frame optimization
    and the file balloons. Four schemes in a 2 by 2 grid come to about
    3.4 MB.

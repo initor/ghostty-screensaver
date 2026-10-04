@@ -160,6 +160,9 @@ static NSHashTable<GhosttyView *> *sLiveViews;
         self.currentFrameIndex = 0;
     }
     self.layer.backgroundColor = scheme.backgroundColor;
+    // Size, origin and fit depend on the typeface as well as the bounds.
+    // Clearing the key makes the next draw place the new frames.
+    self.cachedBounds = CGRectNull;
     [self setNeedsDisplay:YES];
 }
 
@@ -328,7 +331,7 @@ static NSHashTable<GhosttyView *> *sLiveViews;
                                (long)self.currentFrameIndex);
 
     CGRect bounds = self.bounds;
-    CGSize canvas = [GhosttyFrameLoader canvasSize];
+    CGSize canvas = [GhosttyFrameLoader canvasSizeForScheme:self.scheme];
     // Empty bounds cover the 0×0 preview instance macOS 26 creates; an
     // empty canvas means no frames loaded; a retired view is superseded.
     if (self.retired || self.frames.count == 0 || NSIsEmptyRect(bounds) ||
@@ -341,10 +344,11 @@ static NSHashTable<GhosttyView *> *sLiveViews;
     CFAttributedStringRef cfAttr = (__bridge CFAttributedStringRef)attr;
     CFRange textRange = CFRangeMake(0, (CFIndex)attr.length);
 
-    // Placement is a function of bounds alone: the canvas size is shared by
-    // every frame and the ink midpoint is one anchor for the whole loop.
-    // Recompute only when the host changes bounds (it can do so without
-    // calling setFrame:), never per tick.
+    // Placement is a function of the bounds and the scheme's typeface: the
+    // canvas size is shared by every frame and the ink midpoint is one
+    // anchor for the whole loop. Recompute only when the host changes bounds
+    // (it can do so without calling setFrame:) or applyScheme: clears the
+    // key, never per tick.
     if (!CGRectEqualToRect(self.cachedBounds, bounds)) {
         // The canvas never shrinks while it fits, so every display that
         // shows the whole ghost today is unchanged. When it does not fit
@@ -359,7 +363,7 @@ static NSHashTable<GhosttyView *> *sLiveViews;
         self.cachedFit = fit;
         self.cachedDrawSize = canvas;
         self.cachedDrawOrigin = CGPointMake(NSMidX(bounds) - canvas.width / 2.0,
-                                            NSMidY(bounds) - [GhosttyFrameLoader inkMidpoint]);
+                                            NSMidY(bounds) - [GhosttyFrameLoader inkMidpointForScheme:self.scheme]);
         self.cachedBounds = bounds;
     }
 

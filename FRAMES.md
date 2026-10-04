@@ -86,13 +86,15 @@ assigns one sRGB color to each role. The body may instead be a vertical
 gradient, one color per row interpolated between four stops. The loader
 bakes the text colors into the attributed strings at load time as `CGColor`
 values under `kCTForegroundColorAttributeName`, one run per row for a
-gradient; the view sets the background on its layer.
+gradient; the view sets the background on its layer. A scheme also names
+its typeface. Every face sits on Menlo's 100 by 41 grid, so a frame keeps
+its shape in any of them.
 
 The schemes are one static table in `ghostty/GhosttyColorScheme.m`:
 
 ```objc
-{ "catppuccin-mocha", "Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
-//  identifier         display name       background body      accent    gradient stops, top to bottom (all zero = flat)
+{ "catppuccin-mocha", "Catppuccin Mocha", 0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa }, GhosttyTypefaceMenlo },
+//  identifier         display name       background body      accent    gradient stops, top to bottom (all zero = flat)   typeface
 ```
 
 The identifier is stored in `ScreenSaverDefaults` and must never change once

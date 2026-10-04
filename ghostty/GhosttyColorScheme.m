@@ -28,22 +28,24 @@ typedef struct {
     uint32_t body;             // flat body color, and the fallback when gradient is all zero
     uint32_t accent;
     uint32_t gradient[4];      // body gradient stops, top to bottom; all zero = flat body
+    GhosttyTypeface typeface;
 } GhosttyColorSchemeSpec;
 
 // Table order is popup order: Classic first, then A to Z by display name.
 // Row 0 is the fallback and draws exactly what every version before 1.8.0
-// drew. The Abridge row is the abridge.com dark theme, role for role:
-// surface for the background, on-surface for the body, and the brand red
-// (cadmium-red 55) for the halo. The Catppuccin rows use palette 1.8.0
-// (MIT, Copyright (c) 2021 Catppuccin): base for the background, blue for
-// the halo, and the body fades peach, pink, mauve, blue from the top row to
-// the bottom row. The flat text color stays as the documented fallback.
+// drew. The Abridge row follows the abridge.com type system: the warm
+// off-white card surface (warm-gray 5), the heading ink (warm-gray 90), the
+// brand red (cadmium-red 55) on the halo only, and a light face instead of
+// Menlo. The Catppuccin rows use palette 1.8.0 (MIT, Copyright (c) 2021
+// Catppuccin): base for the background, blue for the halo, and the body
+// fades peach, pink, mauve, blue from the top row to the bottom row. The
+// flat text color stays as the documented fallback.
 static const GhosttyColorSchemeSpec kGhosttySchemes[] = {
-    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 } },
-    { "abridge",              "Abridge",              0x000000, 0xffffff, 0xea2c00, { 0, 0, 0, 0 } },
-    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee } },
-    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 } },
-    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
+    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 },                              GhosttyTypefaceMenlo },
+    { "abridge",              "Abridge",              0xfbf9f6, 0x242220, 0xea2c00, { 0, 0, 0, 0 },                              GhosttyTypefaceSystemMonoLight },
+    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee }, GhosttyTypefaceMenlo },
+    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 }, GhosttyTypefaceMenlo },
+    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa }, GhosttyTypefaceMenlo },
 };
 static const size_t kGhosttySchemeCount = sizeof(kGhosttySchemes) / sizeof(kGhosttySchemes[0]);
 
@@ -109,6 +111,7 @@ static CGColorRef GhosttyCreateGradientRowColor(const uint32_t stops[4], NSUInte
         _backgroundColor = GhosttyCreateSRGBColor(spec->background);
         _bodyColor = GhosttyCreateSRGBColor(spec->body);
         _accentColor = GhosttyCreateSRGBColor(spec->accent);
+        _typeface = spec->typeface;
 
         BOOL gradient = spec->gradient[0] || spec->gradient[1] || spec->gradient[2] || spec->gradient[3];
         NSMutableArray *rows = [NSMutableArray arrayWithCapacity:gradient ? GhosttyColorSchemeRowCount : 0];
