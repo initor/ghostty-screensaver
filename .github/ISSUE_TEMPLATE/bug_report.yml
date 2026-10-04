@@ -69,6 +69,7 @@ body:
       description: Options… for ghostty in the [Screen Saver pane](https://github.com/initor/ghostty-screensaver#the-screen-saver-pane).
       options:
         - "Classic (default)"
+        - "Abridge"
         - "Catppuccin Frappé"
         - "Catppuccin Macchiato"
         - "Catppuccin Mocha"

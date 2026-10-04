@@ -6,7 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-10-03
+
+### Added
+- An Abridge color scheme: a white ghost with a red halo on black, from the
+  abridge.com dark theme role for role (`#000000` background, `#FFFFFF`
+  body, `#EA2C00` halo). Pick it in the Options… sheet. The stored id is
+  `abridge`. Versions before 2.2.0 read it as Classic.
+
 ### Changed
+- The Options popup lists Classic first, then the other schemes A to Z.
+- The rendering checks tell schemes apart by their row 0 body color as well
+  as their background, since Classic and Abridge are both black.
+- `assets/color-schemes.gif` shows Abridge and the three Catppuccin flavors.
+  Classic is the GIF at the top of the README.
 - Pushes to `main` that change only documentation, assets, issue templates
   or workflows skip CI and no longer publish a release. Pull requests still
   run CI on every change, and CI now verifies the ad hoc seal on the built
@@ -203,7 +216,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/initor/ghostty-screensaver/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/initor/ghostty-screensaver/compare/v1.8.2...v2.0.0

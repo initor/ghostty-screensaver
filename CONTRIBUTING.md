@@ -85,7 +85,9 @@ missing or unknown value resolves to `classic`.
 
 To add a scheme:
 
-1. Add a row to the table in `ghostty/GhosttyColorScheme.m`.
+1. Add a row to the table in `ghostty/GhosttyColorScheme.m`. Classic stays
+   first. The other rows go A to Z by display name, which is the popup
+   order.
 2. Add the same row to the table at the top of `tests/render_bundle.m`. The
    harness asserts popup order, display names, and exact pixel colors
    against it.
@@ -93,12 +95,14 @@ To add a scheme:
 4. Add the display name to the color scheme dropdown in
    `.github/ISSUE_TEMPLATE/bug_report.yml`, in popup order.
 5. Name the scheme in the README's Color schemes section and regenerate
-   `assets/color-schemes.gif`: render every frame of each scheme through
-   `drawRect:` at 1040 by 820 (the ghost fits with no crop), tile them 2 by
-   2 at 600 px per scheme, scale to 800 px, and encode every other frame at
+   `assets/color-schemes.gif`: render every frame of each scheme except
+   Classic (the GIF at the top of the README shows it) through `drawRect:`
+   at 1040 by 820 (the ghost fits with no crop), tile them at 600 px per
+   scheme in popup order, scale to 800 px, and encode every other frame at
    15 fps with one 128 color palette taken from a representative frame, no
    dithering. A palette chosen per frame breaks frame to frame optimization
-   and the file balloons. That keeps the file near 3.4 MB.
+   and the file balloons. Four schemes in a 2 by 2 grid come to about
+   3.4 MB.
 
 Never write `ScreenSaverDefaults` from a test. Outside the sandbox the write
 lands in your own `~/Library/Preferences/ByHost`. The harness applies schemes
