@@ -6,7 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [2.2.0] — 2026-10-03
+## [2.2.0] — 2026-10-04
 
 ### Added
 - An Abridge color scheme: a white ghost with a red halo on black, from the
