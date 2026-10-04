@@ -23,7 +23,7 @@ enum { kTypefaceMenlo = 0, kTypefaceSystemMonoLight = 1 };
 typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; unsigned gradient[4]; int typeface; } SchemeSpec;
 static const SchemeSpec kSchemes[] = {
     { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 },                              kTypefaceMenlo },
-    { "abridge",              "Abridge",              0xfbf9f6, 0x242220, 0xea2c00, { 0, 0, 0, 0 },                              kTypefaceSystemMonoLight },
+    { "abridge",              "Abridge",              0xfbf9f6, 0xea2c00, 0xa7988a, { 0, 0, 0, 0 },                              kTypefaceSystemMonoLight },
     { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee }, kTypefaceMenlo },
     { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 }, kTypefaceMenlo },
     { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa }, kTypefaceMenlo },
@@ -537,7 +537,7 @@ static void TestSchemeColors(void) {
             }
             NSUInteger accent = ExactPixels(rep, gScheme->accent);
             // The light face covers fewer whole pixels at 1x. Measured minima on
-            // frames 0 and 117 (macOS 27): 5,641 body and 592 accent.
+            // frames 0 and 117 (macOS 27): 9,289 body and 656 accent.
             NSUInteger bodyFloor = gScheme->typeface == kTypefaceMenlo ? 10000 : 4000;
             NSUInteger accentFloor = gScheme->typeface == kTypefaceMenlo ? 1000 : 400;
             Check(body >= bodyFloor, [NSString stringWithFormat:@"%@ exact body pixels %lu >= %lu", label,

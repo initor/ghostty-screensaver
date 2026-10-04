@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.1] — 2026-10-04
+
+### Changed
+- Abridge draws the ghost in the brand red (`#EA2C00`) with a warm gray
+  halo (`#A7988A`), the way abridge.com sets one bold red shape on a calm
+  page. The paper and the light face are unchanged.
+
 ## [2.3.0] — 2026-10-04
 
 ### Changed
@@ -234,7 +241,8 @@ CI: conditional signing in release workflow.
 
 See git history: `git log v1.4.0`.
 
-[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/initor/ghostty-screensaver/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/initor/ghostty-screensaver/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/initor/ghostty-screensaver/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/initor/ghostty-screensaver/compare/v2.1.1...v2.2.0
 [2.1.1]: https://github.com/initor/ghostty-screensaver/compare/v2.1.0...v2.1.1
