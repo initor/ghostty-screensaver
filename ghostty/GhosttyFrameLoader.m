@@ -13,9 +13,18 @@
 #import <os/log.h>
 #import <os/signpost.h>
 
-// File-level statics, populated once in +initialize. The font is shared by
-// every attributed string in every scheme; the regexes compile once.
-static NSFont *sMonospacedFont;
+// One slot per GhosttyTypeface value. C needs a constant to size the arrays.
+enum { kGhosttyTypefaceSlots = 2 };
+_Static_assert(GhosttyTypefaceSystemMonoLight == kGhosttyTypefaceSlots - 1,
+               "every GhosttyTypeface needs a font slot");
+
+// File-level statics, populated once in +initialize. One font per typeface,
+// shared by every attributed string set in it. A face other than Menlo also
+// carries a paragraph style that pins its line height to Menlo's (nil for
+// Menlo itself, whose attributes stay exactly what they were before 2.3.0).
+// The regexes compile once.
+static NSFont *sFonts[kGhosttyTypefaceSlots];
+static NSParagraphStyle *sGridStyles[kGhosttyTypefaceSlots];
 static NSRegularExpression *sSpanRegex;
 static NSRegularExpression *sFilenameRegex;
 static os_log_t sLog;
@@ -26,19 +35,61 @@ static os_log_t sLog;
 static os_log_t sPOILog;
 
 // Process-wide cache: the last scheme loaded and its frames, plus geometry
-// that depends on font and corpus only. Main thread only (see header).
+// that depends on typeface and corpus only, one entry per typeface. Main
+// thread only (see header).
 static GhosttyColorScheme *sCachedScheme;
 static NSArray<NSAttributedString *> *sCachedFrames;
-static CGSize sCanvasSize;
-static CGFloat sInkMidpoint;
-static BOOL sGeometryReady;
+static CGSize sCanvasSize[kGhosttyTypefaceSlots];
+static CGFloat sInkMidpoint[kGhosttyTypefaceSlots];
+static BOOL sGeometryReady[kGhosttyTypefaceSlots];
+
+// An unknown value falls back to Menlo rather than indexing past the arrays.
+static GhosttyTypeface GhosttyTypefaceSlot(GhosttyColorScheme *scheme)
+{
+    GhosttyTypeface face = scheme.typeface;
+    return (face >= 0 && face < kGhosttyTypefaceSlots) ? face : GhosttyTypefaceMenlo;
+}
+
+// A monospaced face's horizontal advance and, when `pitch` is not NULL,
+// Core Text's line pitch for it. Menlo's pair is the grid every other face
+// is laid on. The pitch is measured from a laid-out frame because Core Text
+// rounds the font's ascent and descent per line (Menlo 16 pt: 18.6 pt of
+// metrics, 19 pt between baselines).
+static void GhosttyMeasureGrid(NSFont *font, CGFloat *advance, CGFloat *pitch)
+{
+    CTFontRef ctFont = (__bridge CTFontRef)font;
+    UniChar space = ' ';
+    CGGlyph glyph = 0;
+    CGSize glyphAdvance = CGSizeZero;
+    if (CTFontGetGlyphsForCharacters(ctFont, &space, &glyph, 1)) {
+        CTFontGetAdvancesForGlyphs(ctFont, kCTFontOrientationHorizontal, &glyph, &glyphAdvance, 1);
+    }
+    *advance = glyphAdvance.width;
+    if (!pitch) {
+        return;
+    }
+
+    NSAttributedString *twoLines = [[NSAttributedString alloc] initWithString:@"M\nM"
+                                                                    attributes:@{ NSFontAttributeName: font }];
+    CTFramesetterRef setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)twoLines);
+    CGPathRef path = CGPathCreateWithRect(CGRectMake(0, 0, 1000, 1000), NULL);
+    CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, NULL);
+    CGPoint origins[2] = { CGPointZero, CGPointZero };
+    if (CFArrayGetCount(CTFrameGetLines(frame)) == 2) {
+        CTFrameGetLineOrigins(frame, CFRangeMake(0, 2), origins);
+    }
+    *pitch = origins[0].y - origins[1].y;
+    CFRelease(frame);
+    CGPathRelease(path);
+    CFRelease(setter);
+}
 
 @interface GhosttyFrameLoader ()
 - (NSAttributedString *)attributedFrameFromRawHTML:(NSString *)raw
                                     bodyAttributes:(NSDictionary<NSAttributedStringKey, id> *)bodyAttributes
                                      rowAttributes:(nullable NSArray<NSDictionary<NSAttributedStringKey, id> *> *)rowAttributes
                                   accentAttributes:(NSDictionary<NSAttributedStringKey, id> *)accentAttributes;
-+ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames;
++ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames typeface:(GhosttyTypeface)face;
 @end
 
 @implementation GhosttyFrameLoader
@@ -56,11 +107,32 @@ static BOOL sGeometryReady;
     // attribute-dict literal below would crash via -insertObject:nil.
     // +monospacedSystemFontOfSize:weight: (10.15+) is never-nil and honors
     // the user's preferred monospace style.
-    sMonospacedFont = [NSFont fontWithName:@"Menlo" size:16.0]
-                   ?: [NSFont monospacedSystemFontOfSize:16.0 weight:NSFontWeightRegular]
-                   ?: [NSFont userFixedPitchFontOfSize:16.0]
-                   ?: [NSFont systemFontOfSize:16.0];
-    NSAssert(sMonospacedFont != nil, @"No usable monospaced font available");
+    NSFont *menlo = [NSFont fontWithName:@"Menlo" size:16.0]
+                 ?: [NSFont monospacedSystemFontOfSize:16.0 weight:NSFontWeightRegular]
+                 ?: [NSFont userFixedPitchFontOfSize:16.0]
+                 ?: [NSFont systemFontOfSize:16.0];
+    NSAssert(menlo != nil, @"No usable monospaced font available");
+    sFonts[GhosttyTypefaceMenlo] = menlo;
+
+    // The light face takes the size whose advance equals Menlo's, and a
+    // fixed line height equal to Menlo's pitch. The art then keeps the
+    // canvas and the proportions it was drawn for. At its own metrics SF
+    // Mono would stretch the ghost 8 percent wider for its height. Both
+    // numbers come from the installed fonts, so a future SF Mono still
+    // lands on the grid.
+    CGFloat gridAdvance = 0, gridPitch = 0;
+    GhosttyMeasureGrid(menlo, &gridAdvance, &gridPitch);
+    NSFont *light = [NSFont monospacedSystemFontOfSize:16.0 weight:NSFontWeightLight];
+    CGFloat lightAdvance = 0;
+    GhosttyMeasureGrid(light, &lightAdvance, NULL);
+    if (gridAdvance > 0 && gridPitch > 0 && lightAdvance > 0) {
+        light = [NSFont monospacedSystemFontOfSize:16.0 * gridAdvance / lightAdvance weight:NSFontWeightLight];
+        NSMutableParagraphStyle *grid = [[NSMutableParagraphStyle alloc] init];
+        grid.minimumLineHeight = gridPitch;
+        grid.maximumLineHeight = gridPitch;
+        sGridStyles[GhosttyTypefaceSystemMonoLight] = [grid copy];
+    }
+    sFonts[GhosttyTypefaceSystemMonoLight] = light;
 
     // NSRegularExpressionDotMatchesLineSeparators lets `.*?` cross line
     // boundaries, which the upstream frame generator occasionally produces.
@@ -97,10 +169,14 @@ static BOOL sGeometryReady;
     // them as they are; an NSColor under NSForegroundColorAttributeName is
     // converted through ColorSync on every run of every tick (39 percent of
     // CTFrameDraw time when measured). The font key is shared with Core Text.
-    NSDictionary<NSAttributedStringKey, id> *bodyAttributes = @{
-        NSFontAttributeName: sMonospacedFont,
+    GhosttyTypeface face = GhosttyTypefaceSlot(scheme);
+    NSMutableDictionary<NSAttributedStringKey, id> *bodyAttributes = [@{
+        NSFontAttributeName: sFonts[face],
         (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)scheme.bodyColor,
-    };
+    } mutableCopy];
+    if (sGridStyles[face]) {
+        bodyAttributes[NSParagraphStyleAttributeName] = sGridStyles[face];
+    }
     NSDictionary<NSAttributedStringKey, id> *accentAttributes = @{
         (__bridge NSAttributedStringKey)kCTForegroundColorAttributeName: (__bridge id)scheme.accentColor,
     };
@@ -246,7 +322,7 @@ static BOOL sGeometryReady;
     return [frame copy];
 }
 
-+ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames
++ (void)measureGeometryWithFrames:(NSArray<NSAttributedString *> *)frames typeface:(GhosttyTypeface)face
 {
     NSAttributedString *first = frames.firstObject;
 
@@ -299,12 +375,12 @@ static BOOL sGeometryReady;
     }
     CGPathRelease(measurePath);
 
-    sCanvasSize = canvas;
-    sInkMidpoint = CGRectIsNull(ink) ? canvas.height / 2.0 : CGRectGetMidY(ink);
-    sGeometryReady = YES;
+    sCanvasSize[face] = canvas;
+    sInkMidpoint[face] = CGRectIsNull(ink) ? canvas.height / 2.0 : CGRectGetMidY(ink);
+    sGeometryReady[face] = YES;
 
-    os_log_info(sLog, "Canvas %.2fx%.2f pt, ink midpoint %.2f pt",
-                canvas.width, canvas.height, sInkMidpoint);
+    os_log_info(sLog, "Typeface %ld: canvas %.2fx%.2f pt, ink midpoint %.2f pt",
+                (long)face, canvas.width, canvas.height, sInkMidpoint[face]);
 }
 
 #pragma mark - Process Cache
@@ -329,20 +405,21 @@ static BOOL sGeometryReady;
 
     sCachedScheme = scheme;
     sCachedFrames = frames;
-    if (!sGeometryReady) {
-        [self measureGeometryWithFrames:frames];
+    GhosttyTypeface face = GhosttyTypefaceSlot(scheme);
+    if (!sGeometryReady[face]) {
+        [self measureGeometryWithFrames:frames typeface:face];
     }
     return frames;
 }
 
-+ (CGSize)canvasSize
++ (CGSize)canvasSizeForScheme:(GhosttyColorScheme *)scheme
 {
-    return sCanvasSize;
+    return sCanvasSize[GhosttyTypefaceSlot(scheme)];
 }
 
-+ (CGFloat)inkMidpoint
++ (CGFloat)inkMidpointForScheme:(GhosttyColorScheme *)scheme
 {
-    return sInkMidpoint;
+    return sInkMidpoint[GhosttyTypefaceSlot(scheme)];
 }
 
 @end

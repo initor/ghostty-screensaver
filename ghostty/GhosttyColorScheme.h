@@ -24,12 +24,23 @@ FOUNDATION_EXPORT NSString * const GhosttyColorSchemeIdentifierKey;
 /// Rows in every bundled frame. Body gradients are precomputed per row.
 FOUNDATION_EXPORT const NSUInteger GhosttyColorSchemeRowCount;
 
+/// The face the frames are set in. Every face is laid on Menlo's grid, the
+/// advance and line height of Menlo 16 pt, so the art keeps its proportions
+/// and its canvas whatever the face.
+typedef NS_ENUM(NSInteger, GhosttyTypeface) {
+    /// Menlo 16 pt, the face every version before 2.3.0 drew.
+    GhosttyTypefaceMenlo = 0,
+    /// The system monospaced face (SF Mono) at Light weight.
+    GhosttyTypefaceSystemMonoLight = 1,
+};
+
 /// A color scheme is a background, a body color for the plain glyphs, and an
 /// accent color for the glyphs inside `<span class="b">…</span>`, all opaque
-/// sRGB. A scheme may replace the flat body color with a vertical gradient:
-/// four stops interpolated by row, top to bottom. The built-in schemes live
-/// in a static table in popup order. The identifier is the value stored in
-/// ScreenSaverDefaults and must never change once shipped.
+/// sRGB, plus the typeface the glyphs are set in. A scheme may replace the
+/// flat body color with a vertical gradient: four stops interpolated by row,
+/// top to bottom. The built-in schemes live in a static table in popup
+/// order. The identifier is the value stored in ScreenSaverDefaults and must
+/// never change once shipped.
 @interface GhosttyColorScheme : NSObject
 
 // Instances come from the table only. A plain -init would carry NULL colors.
@@ -43,6 +54,7 @@ FOUNDATION_EXPORT const NSUInteger GhosttyColorSchemeRowCount;
 /// bodyColorForRow: for the color of a row.
 @property (nonatomic, readonly) CGColorRef bodyColor;
 @property (nonatomic, readonly) CGColorRef accentColor;
+@property (nonatomic, readonly) GhosttyTypeface typeface;
 
 /// YES when the body is drawn as a per-row gradient instead of bodyColor.
 @property (nonatomic, readonly) BOOL hasBodyGradient;

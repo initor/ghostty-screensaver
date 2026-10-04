@@ -18,13 +18,15 @@ static NSMutableArray<NSDictionary *> *schemeResults;
 // The harness's own copy of the scheme contract (ghostty/GhosttyColorScheme.m).
 // Ids, popup order, display names and colors are asserted against the bundle,
 // so a drift on either side fails here instead of shipping.
-typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; unsigned gradient[4]; } SchemeSpec;
+// Typefaces, mirroring GhosttyTypeface.
+enum { kTypefaceMenlo = 0, kTypefaceSystemMonoLight = 1 };
+typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; unsigned gradient[4]; int typeface; } SchemeSpec;
 static const SchemeSpec kSchemes[] = {
-    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 } },
-    { "abridge",              "Abridge",              0x000000, 0xffffff, 0xea2c00, { 0, 0, 0, 0 } },
-    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee } },
-    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 } },
-    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
+    { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 },                              kTypefaceMenlo },
+    { "abridge",              "Abridge",              0xfbf9f6, 0x242220, 0xea2c00, { 0, 0, 0, 0 },                              kTypefaceSystemMonoLight },
+    { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee }, kTypefaceMenlo },
+    { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 }, kTypefaceMenlo },
+    { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa }, kTypefaceMenlo },
 };
 static const NSUInteger kSchemeCount = sizeof(kSchemes) / sizeof(kSchemes[0]);
 static const NSUInteger kRows = 41;
@@ -534,8 +536,14 @@ static void TestSchemeColors(void) {
                 body = ExactPixels(rep, gScheme->body);
             }
             NSUInteger accent = ExactPixels(rep, gScheme->accent);
-            Check(body >= 10000, [NSString stringWithFormat:@"%@ exact body pixels %lu >= 10000", label, (unsigned long)body]);
-            Check(accent >= 1000, [NSString stringWithFormat:@"%@ exact accent pixels %lu >= 1000", label, (unsigned long)accent]);
+            // The light face covers fewer whole pixels at 1x. Measured minima on
+            // frames 0 and 117 (macOS 27): 5,641 body and 592 accent.
+            NSUInteger bodyFloor = gScheme->typeface == kTypefaceMenlo ? 10000 : 4000;
+            NSUInteger accentFloor = gScheme->typeface == kTypefaceMenlo ? 1000 : 400;
+            Check(body >= bodyFloor, [NSString stringWithFormat:@"%@ exact body pixels %lu >= %lu", label,
+                                      (unsigned long)body, (unsigned long)bodyFloor]);
+            Check(accent >= accentFloor, [NSString stringWithFormat:@"%@ exact accent pixels %lu >= %lu", label,
+                                          (unsigned long)accent, (unsigned long)accentFloor]);
             Check(body > accent, [NSString stringWithFormat:@"%@ body pixels %lu outnumber accent pixels %lu", label,
                                   (unsigned long)body, (unsigned long)accent]);
             TestFrameAttributes([view valueForKey:@"frames"][index.unsignedIntegerValue], label);
@@ -566,6 +574,57 @@ static BOOL AttributesCarry(NSDictionary *attrs, unsigned rgb) {
            fabs(c[2] * 255 - (rgb & 0xff)) < 0.5;
 }
 
+// The grid every typeface sits on: the advance of Menlo 16 pt and Core
+// Text's line pitch for it, measured here without the saver.
+static void MenloGrid(CGFloat *advance, CGFloat *pitch) {
+    static CGFloat gridAdvance, gridPitch;
+    static BOOL measured;
+    if (!measured) {
+        NSDictionary *menlo = @{ NSFontAttributeName: [NSFont fontWithName:@"Menlo" size:16.0] };
+        NSAttributedString *row = [[NSAttributedString alloc] initWithString:@"          " attributes:menlo];
+        CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)row);
+        gridAdvance = CTLineGetTypographicBounds(line, NULL, NULL, NULL) / 10;
+        CFRelease(line);
+        NSAttributedString *rows = [[NSAttributedString alloc] initWithString:@"M\nM" attributes:menlo];
+        CTFramesetterRef fs = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)rows);
+        gridPitch = CTFramesetterSuggestFrameSizeWithConstraints(fs, CFRangeMake(0, 0), NULL,
+            CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX), NULL).height / 2;
+        CFRelease(fs);
+        measured = YES;
+    }
+    *advance = gridAdvance;
+    *pitch = gridPitch;
+}
+
+// Menlo schemes carry exactly the attributes every version before 2.3.0
+// carried: Menlo 16 pt and no paragraph style. The light face is a
+// monospaced Light face whose advance is Menlo's, with Menlo's pitch as a
+// fixed line height, so the art keeps its grid.
+static BOOL TypefaceMatches(NSDictionary *attrs, const SchemeSpec *s, NSString **detail) {
+    NSFont *font = attrs[NSFontAttributeName];
+    NSParagraphStyle *style = attrs[NSParagraphStyleAttributeName];
+    CGFloat gridAdvance = 0, gridPitch = 0;
+    MenloGrid(&gridAdvance, &gridPitch);
+    if (s->typeface == kTypefaceMenlo) {
+        *detail = [NSString stringWithFormat:@"%@ %.3f pt, paragraph style %@", font.fontName, font.pointSize,
+                   style ? @"set" : @"none"];
+        return [font.fontName isEqual:@"Menlo-Regular"] && font.pointSize == 16.0 && style == nil;
+    }
+    NSDictionary *traits = [font.fontDescriptor objectForKey:NSFontTraitsAttribute];
+    CGFloat weight = [traits[NSFontWeightTrait] doubleValue];
+    BOOL monospaced = (font.fontDescriptor.symbolicTraits & NSFontDescriptorTraitMonoSpace) != 0;
+    NSAttributedString *row = [[NSAttributedString alloc] initWithString:@"          "
+                                                              attributes:@{ NSFontAttributeName: font }];
+    CTLineRef line = CTLineCreateWithAttributedString((__bridge CFAttributedStringRef)row);
+    CGFloat advance = CTLineGetTypographicBounds(line, NULL, NULL, NULL) / 10;
+    CFRelease(line);
+    *detail = [NSString stringWithFormat:@"%@ %.4f pt, monospaced %d, weight %.3f, advance %.4f (grid %.4f), line %.3f-%.3f (grid %.3f)",
+               font.fontName, font.pointSize, monospaced, weight, advance, gridAdvance,
+               style.minimumLineHeight, style.maximumLineHeight, gridPitch];
+    return monospaced && fabs(weight - NSFontWeightLight) < 0.05 && fabs(advance - gridAdvance) < 0.001 &&
+           style && style.minimumLineHeight == gridPitch && style.maximumLineHeight == gridPitch;
+}
+
 // A frame set belongs to a scheme when its first run carries that scheme's
 // row 0 body color. Two schemes may share a background (Classic and Abridge
 // are both black), so the sheet checks identify a scheme by this color too.
@@ -576,8 +635,21 @@ static BOOL FramesCarryScheme(NSArray<NSAttributedString *> *frames, const Schem
 }
 
 static void TestFrameAttributes(NSAttributedString *frame, NSString *label) {
-    Check(AttributesCarry([frame attributesAtIndex:0 effectiveRange:NULL], RowColor(gScheme, 0)),
+    NSDictionary *firstRun = [frame attributesAtIndex:0 effectiveRange:NULL];
+    Check(AttributesCarry(firstRun, RowColor(gScheme, 0)),
           [label stringByAppendingString:@" first run carries the row 0 body CGColor under the Core Text key"]);
+    NSString *typeface = nil;
+    Check(TypefaceMatches(firstRun, gScheme, &typeface), [NSString stringWithFormat:@"%@ typeface: %@", label, typeface]);
+    __block NSUInteger otherFaces = 0;
+    [frame enumerateAttributesInRange:NSMakeRange(0, frame.length) options:0
+                           usingBlock:^(NSDictionary *attrs, NSRange range, BOOL *stop) {
+        (void)range; (void)stop;
+        id style = attrs[NSParagraphStyleAttributeName], firstStyle = firstRun[NSParagraphStyleAttributeName];
+        if (![attrs[NSFontAttributeName] isEqual:firstRun[NSFontAttributeName]] ||
+            !(style == firstStyle || [style isEqual:firstStyle])) otherFaces++;
+    }];
+    Check(otherFaces == 0, [NSString stringWithFormat:@"%@ every run is set in one face (%lu runs differ)",
+                            label, (unsigned long)otherFaces]);
     // Every run is the accent or the body color of the row it sits on.
     NSString *text = frame.string;
     __block NSUInteger accentRuns = 0, otherRuns = 0;
@@ -626,6 +698,67 @@ static void TestSchemeLookup(void) {
     id fallback = [schemeClass performSelector:@selector(schemeWithIdentifier:) withObject:nil];
     Check(fallback == all.firstObject && [[fallback valueForKey:@"identifier"] isEqual:@"classic"],
           @"lookup: nil resolves to the first row, classic");
+}
+
+// The whole-loop ink midpoint of a frame set, by the documented method: the
+// union of every line's glyph image bounds over all frames, in canvas
+// coordinates. The raster cycles check this method against pixels within
+// 1 pt. This oracle pins the wiring exactly: each typeface anchors on its
+// own frames, which the 1 pt tolerance alone would let slip (Menlo's anchor
+// on the light face is 0.58 pt off).
+static CGFloat AnalyticInkMidpoint(NSArray<NSAttributedString *> *frames, NSSize canvas) {
+    CGPathRef path = CGPathCreateWithRect(CGRectMake(0, 0, canvas.width, canvas.height), NULL);
+    CGRect ink = CGRectNull;
+    for (NSAttributedString *frame in frames) {
+        @autoreleasepool {
+            CTFramesetterRef fs = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)frame);
+            CTFrameRef ctFrame = CTFramesetterCreateFrame(fs, CFRangeMake(0, (CFIndex)frame.length), path, NULL);
+            CFArrayRef lines = CTFrameGetLines(ctFrame);
+            for (CFIndex i = 0; i < CFArrayGetCount(lines); i++) {
+                CGRect glyphs = CTLineGetImageBounds((CTLineRef)CFArrayGetValueAtIndex(lines, i), NULL);
+                if (CGRectIsNull(glyphs) || CGRectIsEmpty(glyphs)) continue;
+                CGPoint baseline;
+                CTFrameGetLineOrigins(ctFrame, CFRangeMake(i, 1), &baseline);
+                ink = CGRectUnion(ink, CGRectOffset(glyphs, baseline.x, baseline.y));
+            }
+            CFRelease(ctFrame); CFRelease(fs);
+        }
+    }
+    CGPathRelease(path);
+    return CGRectIsNull(ink) ? canvas.height / 2 : CGRectGetMidY(ink);
+}
+
+// Each typeface anchors on its own ink, and a view that switches schemes
+// places the new frames instead of reusing the old placement.
+static void TestAnchorPerTypeface(void) {
+    NSRect bounds = NSMakeRect(0, 0, 1920, 1080);
+    CGFloat origins[kSchemeCount];
+    for (NSUInteger i = 0; i < kSchemeCount; i++) {
+        SelectScheme(kSchemes[i].identifier);
+        ScreenSaverView *view = NewView(bounds, NO);
+        Render(view, 1, NULL, 1);
+        NSSize canvas = [[view valueForKey:@"cachedDrawSize"] sizeValue];
+        origins[i] = [[view valueForKey:@"cachedDrawOrigin"] pointValue].y;
+        CGFloat expected = NSMidY(bounds) - AnalyticInkMidpoint([view valueForKey:@"frames"], canvas);
+        Check(fabs(origins[i] - expected) < 0.001,
+              [NSString stringWithFormat:@"anchor: %s origin %.4f is its own ink midpoint (%.4f)",
+               kSchemes[i].identifier, origins[i], expected]);
+    }
+    for (NSUInteger i = 0; i < kSchemeCount; i++) {
+        for (NSUInteger j = 0; j < kSchemeCount; j++) {
+            if (i == j) continue;
+            SelectScheme(kSchemes[i].identifier);
+            ScreenSaverView *view = NewView(bounds, NO);
+            Render(view, 1, NULL, 1);
+            ApplyScheme(view, kSchemes[j].identifier);
+            Render(view, 1, NULL, 1);
+            CGFloat switched = [[view valueForKey:@"cachedDrawOrigin"] pointValue].y;
+            Check(fabs(switched - origins[j]) < 0.001,
+                  [NSString stringWithFormat:@"anchor: %s switched to %s draws at %.4f, a fresh view at %.4f",
+                   kSchemes[i].identifier, kSchemes[j].identifier, switched, origins[j]]);
+        }
+    }
+    SelectScheme("classic");
 }
 
 static NSView *FindSubview(NSView *root, Class cls, NSString *title) {
@@ -819,9 +952,21 @@ int main(int argc, const char *argv[]) {
             SelectScheme("catppuccin-mocha");
             ScreenSaverView *mochaView = NewView(NSMakeRect(0, 0, 1920, 1080), NO);
             if ([[mochaView valueForKey:@"frames"] count] == 235) TestCycle(mochaView, 1, @"landscape-mocha", samples);
+            // Full cycles in the light face: its own canvas and ink anchor, and
+            // centering on a light background. At 1x every baseline of this
+            // face lands 0.003 pt under a pixel boundary on an even-height
+            // display, and the rasterizer snaps it a whole pixel down, so the
+            // 1x union center sits at the 1 pt bound. At 2x the snap is half a
+            // point, which is where the anchor shows its precision.
+            SelectScheme("abridge");
+            ScreenSaverView *abridgeView = NewView(NSMakeRect(0, 0, 1920, 1080), NO);
+            if ([[abridgeView valueForKey:@"frames"] count] == 235) TestCycle(abridgeView, 1, @"landscape-abridge", samples);
+            ScreenSaverView *abridgeRetina = NewView(NSMakeRect(0, 0, 1512, 982), NO);
+            if ([[abridgeRetina valueForKey:@"frames"] count] == 235) TestCycle(abridgeRetina, 2, @"retina-abridge", samples);
             SelectScheme("classic");
             TestSchemeLookup();
             TestSchemeColors();
+            TestAnchorPerTypeface();
             TestOptionsSheet();
             TestSupersededViews();
             ScreenSaverView *view = NewView(NSMakeRect(0, 0, 1512, 982), NO);

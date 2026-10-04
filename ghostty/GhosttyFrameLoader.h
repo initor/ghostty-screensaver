@@ -43,15 +43,18 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<NSAttributedString *> *)framesForScheme:(GhosttyColorScheme *)scheme
                                             bundle:(NSBundle *)bundle;
 
-/// The canvas every frame lays out in: 100 columns by 41 rows at the shared
-/// font. Depends on font and corpus only, so it holds for every scheme.
-/// Zero until the first non-empty load.
-+ (CGSize)canvasSize;
+/// The canvas every frame lays out in: 100 columns by 41 rows in the
+/// scheme's typeface. Depends on typeface and corpus only, so every scheme
+/// set in one face shares it. Zero until the first non-empty load in that
+/// face. Every face sits on Menlo's grid, so the size is the same for all
+/// of them to within a rounding error.
++ (CGSize)canvasSizeForScheme:(GhosttyColorScheme *)scheme;
 
 /// Midpoint of the union of visible ink over the whole loop, in canvas
-/// coordinates. One anchor for the whole animation preserves its authored
-/// motion instead of recentering per frame. Computed once per process.
-+ (CGFloat)inkMidpoint;
+/// coordinates, for the scheme's typeface. One anchor for the whole
+/// animation preserves its authored motion instead of recentering per
+/// frame. Computed once per process and typeface.
++ (CGFloat)inkMidpointForScheme:(GhosttyColorScheme *)scheme;
 
 @end
 

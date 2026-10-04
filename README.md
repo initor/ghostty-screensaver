@@ -50,7 +50,7 @@ Requires macOS 12 or later, on Apple Silicon or Intel.
 
 ## Color schemes
 
-Classic, the original look, is the default. Abridge uses the colors of [abridge.com](https://www.abridge.com/): a white ghost with a red halo on black. Three more follow the [Catppuccin](https://catppuccin.com/) palette: Frappé, Macchiato and Mocha. Each uses the flavor's base as the background and its blue as the halo. The body fades from peach through pink and mauve to that blue.
+Classic, the original look, is the default. Abridge follows the typography of [abridge.com](https://www.abridge.com/): near-black ink on warm paper, a red halo, and a light monospaced face. It is the one light scheme, so the whole screen turns off-white. Three more follow the [Catppuccin](https://catppuccin.com/) palette: Frappé, Macchiato and Mocha. Each uses the flavor's base as the background and its blue as the halo. The body fades from peach through pink and mauve to that blue.
 
 <img
   alt="The animation looping in Abridge and in Catppuccin Frappé, Macchiato and Mocha."
