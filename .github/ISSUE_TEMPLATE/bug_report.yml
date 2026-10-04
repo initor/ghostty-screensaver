@@ -1,5 +1,5 @@
 name: Bug report
-description: Something is not working. Animation stutters, screensaver will not install, crash, etc.
+description: Something is not working. Animation stutters, screen saver will not install, crash, etc.
 title: "[bug] "
 labels: ["bug"]
 body:
@@ -7,14 +7,14 @@ body:
     attributes:
       value: |
         Thanks for filing a report. Please complete the environment fields
-        below. Most screensaver bugs are environment-specific (macOS
+        below. Most screen saver bugs are environment-specific (macOS
         version, chip, Low Power Mode state) and the fastest fixes start
         from a complete picture.
 
         Before filing: have you read the README's
         [Install](https://github.com/initor/ghostty-screensaver#install) and
         [FAQ](https://github.com/initor/ghostty-screensaver#faq) sections?
-        Most install friction collapses to the quarantine flag or the
+        Most install friction collapses to the download flag or the
         `legacyScreenSaver` cache.
 
   - type: input
@@ -66,7 +66,7 @@ body:
     id: scheme
     attributes:
       label: Color scheme
-      description: Options… for ghostty in the Screen Saver pane (the README says where the pane is on your macOS version).
+      description: Options… for ghostty in the [Screen Saver pane](https://github.com/initor/ghostty-screensaver#the-screen-saver-pane).
       options:
         - "Classic (default)"
         - "Catppuccin Frappé"
@@ -109,7 +109,7 @@ body:
     attributes:
       label: Logs (optional but helpful)
       description: |
-        Run this in Terminal while reproducing the bug, then paste the output:
+        Run this in Terminal while reproducing the bug, press Control-C to stop it, then paste the output:
         ```
         log stream --predicate 'subsystem == "com.initor.ghostty-screensaver"' --info
         ```

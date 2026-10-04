@@ -1,8 +1,9 @@
 # Frame Format Specification
 
 The 235 ASCII art frames under `ghostty/static/animation_frames/` are the
-content of this screensaver. This document describes their format so new frames or new color schemes can be added without reverse-engineering
-the loader.
+content of this screen saver. This document describes their format so new
+frames or new color schemes can be added without reverse-engineering the
+loader.
 
 > **Attribution.** The current 235-frame corpus is derived from
 > [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames),
@@ -95,9 +96,8 @@ The schemes are one static table in `ghostty/GhosttyColorScheme.m`:
 ```
 
 The identifier is stored in `ScreenSaverDefaults` and must never change once
-shipped. To add a scheme, add a row here and the same row to the table in
-`tests/render_bundle.m`, then run `tests/verify-rendering.sh`. The harness
-asserts the popup order, the display names, and the exact pixel colors.
+shipped. To add a scheme, follow the steps in
+[CONTRIBUTING.md](CONTRIBUTING.md#color-schemes).
 
 Adding a second accent role (a new span class) would need a second regex
 group and one more accent color per scheme. Nothing in the corpus uses one

@@ -6,11 +6,11 @@ upstream [Ghostty](https://ghostty.org/) terminal.
 
 ## Filing issues
 
-Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.yml) so the
-environment (macOS version, chip, Low Power Mode, color scheme) is captured
-up front. For install friction, check the README's
+Use the [bug report form](https://github.com/initor/ghostty-screensaver/issues/new?template=bug_report.yml)
+so the environment (macOS version, chip, Low Power Mode, color scheme) is
+captured up front. For install friction, check the README's
 [Install](README.md#install) section first. Most reports come down to the
-quarantine flag or the `legacyScreenSaver` cache.
+download flag or the `legacyScreenSaver` cache.
 
 ## Building
 
@@ -90,13 +90,15 @@ To add a scheme:
    harness asserts popup order, display names, and exact pixel colors
    against it.
 3. Run the rendering checks.
-4. Add the row to the README table and regenerate `assets/color-schemes.gif`:
-   render every frame of each scheme through `drawRect:` at 1040 by 820
-   (the ghost fits with no crop), tile them 2 by 2 at 600 px per scheme,
-   scale to 800 px, and encode every other frame at 15 fps with one
-   128 color palette taken from a representative frame, no dithering. A
-   palette chosen per frame breaks frame to frame optimization and the
-   file balloons. That keeps the file near 3.4 MB.
+4. Add the display name to the color scheme dropdown in
+   `.github/ISSUE_TEMPLATE/bug_report.yml`, in popup order.
+5. Name the scheme in the README's Color schemes section and regenerate
+   `assets/color-schemes.gif`: render every frame of each scheme through
+   `drawRect:` at 1040 by 820 (the ghost fits with no crop), tile them 2 by
+   2 at 600 px per scheme, scale to 800 px, and encode every other frame at
+   15 fps with one 128 color palette taken from a representative frame, no
+   dithering. A palette chosen per frame breaks frame to frame optimization
+   and the file balloons. That keeps the file near 3.4 MB.
 
 Never write `ScreenSaverDefaults` from a test. Outside the sandbox the write
 lands in your own `~/Library/Preferences/ByHost`. The harness applies schemes
@@ -159,8 +161,8 @@ rendering checks from the release commit, so a harness change ships with the
 code it gates.
 
 The workflow signs and notarizes when `DEVELOPER_ID_*` and `APPLE_*` secrets
-exist. Otherwise it ad hoc signs and adds quarantine instructions to the
-release notes.
+exist. Otherwise it ad hoc signs and adds the step that clears the download
+flag to the release notes.
 
 ## Pull requests
 

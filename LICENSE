@@ -53,7 +53,7 @@ notice are reproduced below in full per MIT clause 2:
 
 --------------------------------------------------------------------------------
 
-The color values of the four Catppuccin schemes in `ghostty/GhosttyColorScheme.m`
+The color values of the three Catppuccin schemes in `ghostty/GhosttyColorScheme.m`
 come from https://github.com/catppuccin/palette (palette 1.8.0) and are used
 under its MIT license. The upstream copyright notice and permission notice are
 reproduced below in full per MIT clause 2:

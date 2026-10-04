@@ -16,6 +16,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   13 to 15 and 26, and add update, click-only uninstall, "it never starts"
   and bug report guidance. The release notes and the bug template follow
   the same steps.
+- README, second pass: requirements first, the Screen Saver pane as one
+  line per macOS version, the exact button to click when installing, and an
+  Update section. A second download in the same folder unzips as
+  `ghostty 2.saver` and keeps its download flag, so an update now starts by
+  clearing the old download. The scheme hex table left the README. The
+  release notes follow the same steps, and SECURITY.md says ad hoc signed
+  instead of unsigned.
 
 ## [2.1.1] — 2026-09-22
 
