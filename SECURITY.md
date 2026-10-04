@@ -13,25 +13,25 @@ their GitHub profile.
 
 ## Scope
 
-This is an unsigned macOS screensaver bundle (`.saver`) that runs inside
-Apple's `legacyScreenSaver` sandbox. It reads only its bundled
-`frame_NNN.txt` resources, makes no network requests, and writes one
-preference (the chosen color scheme) through `ScreenSaverDefaults` inside
-the sandbox container. In-scope reports are anything that:
+This is a macOS screen saver bundle (`.saver`) that runs inside Apple's
+`legacyScreenSaver` sandbox. Releases are ad hoc signed, not signed with an
+Apple Developer ID. It reads only its bundled `frame_NNN.txt` resources,
+makes no network requests, and writes one preference (the chosen color
+scheme) through `ScreenSaverDefaults` inside the sandbox container.
+In-scope reports are anything that:
 
-- Causes the bundle to read or write paths it shouldn't.
+- Causes the bundle to read or write paths it should not.
 - Triggers code execution beyond the rendering of bundled ASCII frames.
 - Allows a crafted frame file to escape the sandbox or crash the host.
 
 Out of scope:
 
-- The "damaged and can't be opened" Gatekeeper message — that's expected
-  for unsigned releases and documented in the README.
-- macOS-side issues with `legacyScreenSaver` itself; please report those
-  to Apple.
+- The "damaged and can't be opened" message. It comes from the download
+  flag on a release without a Developer ID, and the README covers it.
+- Issues in `legacyScreenSaver` itself. Please report those to Apple.
 
 ## Response
 
-I'm a single maintainer with a day job; I aim to acknowledge reports
+I am a single maintainer with a day job. I aim to acknowledge reports
 within 7 days and to ship a fix within 30 days for high-severity issues.
-I'll credit reporters in the release notes unless asked otherwise.
+I credit reporters in the release notes unless asked otherwise.

@@ -241,11 +241,13 @@ jobs:
           cat > release-notes.md << 'NOTES'
           ## Installation
 
-          1. Download `ghostty.saver.zip` below and unzip
-          2. Double-click `ghostty.saver` to install
-          3. Select **ghostty** in the list
+          1. Download `ghostty.saver.zip` below. Safari unzips it. In other browsers, double-click it.
+          2. Double-click `ghostty.saver` and click **Install for this user only**.
+          3. Select **ghostty** in the Screen Saver pane.
 
-          Full steps, updating and troubleshooting: https://github.com/initor/ghostty-screensaver#install
+          Updating? First move the old `ghostty.saver` and its zip in Downloads to the Trash, then uninstall the old version: https://github.com/initor/ghostty-screensaver#update
+
+          Full steps and troubleshooting: https://github.com/initor/ghostty-screensaver#install
 
           ---
           NOTES
@@ -253,16 +255,18 @@ jobs:
           cat > release-notes.md << 'NOTES'
           ## Installation
 
-          1. Download `ghostty.saver.zip` below and unzip
-          2. **Clear the download flag** (required, otherwise macOS refuses to load it when you select it in the list, usually saying the file is "damaged"):
+          1. Download `ghostty.saver.zip` below. Safari unzips it. In other browsers, double-click it.
+          2. **Clear the download flag.** Without it, macOS says the file is "damaged" and refuses it. In Terminal, run:
              ```
              xattr -d -r com.apple.quarantine ~/Downloads/ghostty.saver
              ```
-             Adjust the path if you unzipped it somewhere other than `~/Downloads`.
-          3. Double-click `ghostty.saver` to install
-          4. Select **ghostty** in the list
+             It prints nothing when it works. Adjust the path if the file is not in `~/Downloads`.
+          3. Double-click `ghostty.saver` and click **Install for this user only**.
+          4. Select **ghostty** in the Screen Saver pane.
 
-          Full steps, updating and troubleshooting: https://github.com/initor/ghostty-screensaver#install
+          Updating? First move the old `ghostty.saver` and its zip in Downloads to the Trash, then uninstall the old version: https://github.com/initor/ghostty-screensaver#update
+
+          Full steps and troubleshooting: https://github.com/initor/ghostty-screensaver#install
 
           ---
           NOTES
