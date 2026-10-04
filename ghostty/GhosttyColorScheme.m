@@ -33,16 +33,16 @@ typedef struct {
 
 // Table order is popup order: Classic first, then A to Z by display name.
 // Row 0 is the fallback and draws exactly what every version before 1.8.0
-// drew. The Abridge row follows the abridge.com type system: the warm
-// off-white card surface (warm-gray 5), the heading ink (warm-gray 90), the
-// brand red (cadmium-red 55) on the halo only, and a light face instead of
-// Menlo. The Catppuccin rows use palette 1.8.0 (MIT, Copyright (c) 2021
+// drew. The Abridge row follows abridge.com, which sets one bold red shape
+// on a calm warm page: the ghost in the brand red (cadmium-red 55), the halo
+// in the muted text tone (warm-gray 50), the warm off-white card surface
+// (warm-gray 5), and a light face instead of Menlo. The Catppuccin rows use palette 1.8.0 (MIT, Copyright (c) 2021
 // Catppuccin): base for the background, blue for the halo, and the body
 // fades peach, pink, mauve, blue from the top row to the bottom row. The
 // flat text color stays as the documented fallback.
 static const GhosttyColorSchemeSpec kGhosttySchemes[] = {
     { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 },                              GhosttyTypefaceMenlo },
-    { "abridge",              "Abridge",              0xfbf9f6, 0x242220, 0xea2c00, { 0, 0, 0, 0 },                              GhosttyTypefaceSystemMonoLight },
+    { "abridge",              "Abridge",              0xfbf9f6, 0xea2c00, 0xa7988a, { 0, 0, 0, 0 },                              GhosttyTypefaceSystemMonoLight },
     { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee }, GhosttyTypefaceMenlo },
     { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 }, GhosttyTypefaceMenlo },
     { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa }, GhosttyTypefaceMenlo },

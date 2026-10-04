@@ -101,8 +101,8 @@ To add a scheme:
    `assets/color-schemes.gif`: render every frame of each scheme except
    Classic (the GIF at the top of the README shows it) through `drawRect:`
    at 1040 by 820 points and 2x scale (the ghost fits with no crop), tile
-   them at 600 px per scheme in popup order with each label in the scheme's
-   own text color, scale to 800 px, and encode every other frame at 15 fps
+   them at 600 px per scheme in popup order with a small label on each
+   tile, scale to 800 px, and encode every other frame at 15 fps
    with one 128 color palette taken from a representative frame, no
    dithering. A palette chosen per frame breaks frame to frame optimization
    and the file balloons. Four schemes in a 2 by 2 grid come to about
