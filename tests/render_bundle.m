@@ -21,6 +21,7 @@ static NSMutableArray<NSDictionary *> *schemeResults;
 typedef struct { const char *identifier; const char *displayName; unsigned bg, body, accent; unsigned gradient[4]; } SchemeSpec;
 static const SchemeSpec kSchemes[] = {
     { "classic",              "Classic",              0x000000, 0xd7d7d7, 0x0000e6, { 0, 0, 0, 0 } },
+    { "abridge",              "Abridge",              0x000000, 0xffffff, 0xea2c00, { 0, 0, 0, 0 } },
     { "catppuccin-frappe",    "Catppuccin Frappé",    0x303446, 0xc6d0f5, 0x8caaee, { 0xef9f76, 0xf4b8e4, 0xca9ee6, 0x8caaee } },
     { "catppuccin-macchiato", "Catppuccin Macchiato", 0x24273a, 0xcad3f5, 0x8aadf4, { 0xf5a97f, 0xf5bde6, 0xc6a0f6, 0x8aadf4 } },
     { "catppuccin-mocha",     "Catppuccin Mocha",     0x1e1e2e, 0xcdd6f4, 0x89b4fa, { 0xfab387, 0xf5c2e7, 0xcba6f7, 0x89b4fa } },
@@ -565,6 +566,15 @@ static BOOL AttributesCarry(NSDictionary *attrs, unsigned rgb) {
            fabs(c[2] * 255 - (rgb & 0xff)) < 0.5;
 }
 
+// A frame set belongs to a scheme when its first run carries that scheme's
+// row 0 body color. Two schemes may share a background (Classic and Abridge
+// are both black), so the sheet checks identify a scheme by this color too.
+// TestSchemeLookup asserts that no two rows share it.
+static BOOL FramesCarryScheme(NSArray<NSAttributedString *> *frames, const SchemeSpec *s) {
+    if (frames.count == 0 || frames[0].length == 0) return NO;
+    return AttributesCarry([frames[0] attributesAtIndex:0 effectiveRange:NULL], RowColor(s, 0));
+}
+
 static void TestFrameAttributes(NSAttributedString *frame, NSString *label) {
     Check(AttributesCarry([frame attributesAtIndex:0 effectiveRange:NULL], RowColor(gScheme, 0)),
           [label stringByAppendingString:@" first run carries the row 0 body CGColor under the Core Text key"]);
@@ -597,10 +607,16 @@ static void TestSchemeLookup(void) {
               [NSString stringWithFormat:@"lookup: row %lu is %s", (unsigned long)i, kSchemes[i].identifier]);
         Check(LookupScheme(@(kSchemes[i].identifier)) == all[i],
               [NSString stringWithFormat:@"lookup: %s resolves to its table object", kSchemes[i].identifier]);
+        // FramesCarryScheme tells schemes apart by this color.
+        for (NSUInteger j = i + 1; j < kSchemeCount; j++) {
+            Check(RowColor(&kSchemes[i], 0) != RowColor(&kSchemes[j], 0),
+                  [NSString stringWithFormat:@"lookup: %s and %s differ in their row 0 body color",
+                   kSchemes[i].identifier, kSchemes[j].identifier]);
+        }
     }
     NSDictionary<NSString *, NSString *> *cases = @{
         @"": @"classic", @"   ": @"classic", @"not-a-scheme": @"classic", @"CLASSIC": @"classic",
-        @"  Catppuccin-Mocha \n": @"catppuccin-mocha", @"catppuccin-latte": @"classic",
+        @"  Catppuccin-Mocha \n": @"catppuccin-mocha", @"catppuccin-latte": @"classic", @" Abridge ": @"abridge",
     };
     for (NSString *input in cases) {
         id scheme = LookupScheme(input);
@@ -650,12 +666,15 @@ static void TestOptionsSheet(void) {
               [NSString stringWithFormat:@"sheet: selecting %s updates the view live", kSchemes[i].identifier]);
         NSArray *after = [view valueForKey:@"frames"];
         Check(after != before, [NSString stringWithFormat:@"sheet: %s swaps the frames", kSchemes[i].identifier]);
+        Check(FramesCarryScheme(after, &kSchemes[i]),
+              [NSString stringWithFormat:@"sheet: %s frames carry its row 0 body color", kSchemes[i].identifier]);
         before = after;
     }
     NSButton *cancel = (NSButton *)FindSubview(window.contentView, NSButton.class, @"Cancel");
     Check(cancel != nil, @"sheet: Cancel button");
     if (cancel) [cancel sendAction:cancel.action to:cancel.target];
-    Check(LayerBackgroundIs(view, kSchemes[0].bg), @"sheet: Cancel restores the opening scheme");
+    Check(LayerBackgroundIs(view, kSchemes[0].bg), @"sheet: Cancel restores the opening background");
+    Check(FramesCarryScheme([view valueForKey:@"frames"], &kSchemes[0]), @"sheet: Cancel restores the opening frames");
     Check([view.configureSheet isEqual:window] && popup.indexOfSelectedItem == 0,
           @"sheet: reopening selects the restored scheme");
     Check(FindSubview(window.contentView, NSButton.class, @"OK") != nil, @"sheet: OK button");

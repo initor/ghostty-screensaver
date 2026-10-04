@@ -50,10 +50,10 @@ Requires macOS 12 or later, on Apple Silicon or Intel.
 
 ## Color schemes
 
-Classic, the original look, is the default. Three more follow the [Catppuccin](https://catppuccin.com/) palette: Frappé, Macchiato and Mocha. Each uses the flavor's base as the background and its blue as the halo. The body fades from peach through pink and mauve to that blue.
+Classic, the original look, is the default. Abridge uses the colors of [abridge.com](https://www.abridge.com/): a white ghost with a red halo on black. Three more follow the [Catppuccin](https://catppuccin.com/) palette: Frappé, Macchiato and Mocha. Each uses the flavor's base as the background and its blue as the halo. The body fades from peach through pink and mauve to that blue.
 
 <img
-  alt="The animation looping in Classic and in Catppuccin Frappé, Macchiato and Mocha."
+  alt="The animation looping in Abridge and in Catppuccin Frappé, Macchiato and Mocha."
   src="assets/color-schemes.gif"
   width="800">
 
@@ -126,7 +126,7 @@ Pure Objective-C and Core Text, universal binary, 30 Hz (15 Hz in Low Power Mode
 
 ## Acknowledgements
 
-The 235 ASCII frames in `ghostty/static/animation_frames/` were created by the [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames) contributors and are reused here with attribution under MIT (Copyright (c) 2024 Ghostty). All artistic credit for the animation belongs to the upstream authors. The Catppuccin schemes use the [Catppuccin palette](https://github.com/catppuccin/palette) (Copyright (c) 2021 Catppuccin, MIT). The wrapper (view, frame loader, Options sheet, build pipeline) is original work.
+The 235 ASCII frames in `ghostty/static/animation_frames/` were created by the [ghostty-org/website](https://github.com/ghostty-org/website/tree/main/terminals/home/animation_frames) contributors and are reused here with attribution under MIT (Copyright (c) 2024 Ghostty). All artistic credit for the animation belongs to the upstream authors. The Catppuccin schemes use the [Catppuccin palette](https://github.com/catppuccin/palette) (Copyright (c) 2021 Catppuccin, MIT). The Abridge scheme uses the brand colors of [abridge.com](https://www.abridge.com/). Abridge is a trademark of Abridge AI. This project is not affiliated with or endorsed by Abridge. The wrapper (view, frame loader, Options sheet, build pipeline) is original work.
 
 If you are an upstream contributor and prefer different attribution wording, or want the frames removed, please open an issue.
 
